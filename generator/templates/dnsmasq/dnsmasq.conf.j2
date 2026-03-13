@@ -1,0 +1,35 @@
+# NetWatch — dnsmasq configuration
+# Generated from topology.yml — DO NOT HAND-EDIT
+#
+# Provides DHCP reservations and DNS for the OOB management network.
+# All 30 nodes get static MAC→IP bindings and hostname.domain DNS entries.
+
+# --- General ---
+domain={{ domain }}
+local=/{{ domain }}/
+expand-hosts
+no-resolv
+bogus-priv
+
+# --- DHCP range (for unknown clients, narrow range) ---
+dhcp-range={{ gateway }},static,255.255.255.0,infinite
+
+# --- Default gateway ---
+dhcp-option=option:router,{{ gateway }}
+
+# --- DNS server (self) ---
+dhcp-option=option:dns-server,{{ gateway }}
+
+# --- DHCP reservations (MAC → IP → hostname) ---
+{% for res in reservations %}
+dhcp-host={{ res.mac }},{{ res.ip }},{{ res.name }},infinite
+{% endfor %}
+
+# --- DNS entries (hostname → management IP) ---
+{% for res in reservations %}
+address=/{{ res.name }}.{{ domain }}/{{ res.ip }}
+{% endfor %}
+
+# --- Logging ---
+log-dhcp
+log-queries

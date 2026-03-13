@@ -1,0 +1,97 @@
+#!/bin/bash
+# NetWatch — Status
+# Generated from topology.yml — DO NOT HAND-EDIT
+#
+# Shows the state of all fabric components:
+#   - FRR containers (running/stopped)
+#   - Bridges (up/missing)
+#   - Management network reachability
+#   - BGP session summary (if containers are running)
+
+set -uo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+ok()   { echo -e "  ${GREEN}✓${NC} $1"; }
+fail() { echo -e "  ${RED}✗${NC} $1"; }
+warn() { echo -e "  ${YELLOW}!${NC} $1"; }
+
+TOTAL=0
+PASS=0
+
+check() {
+    TOTAL=$((TOTAL + 1))
+    if eval "$1" >/dev/null 2>&1; then
+        ok "$2"
+        PASS=$((PASS + 1))
+    else
+        fail "$2"
+    fi
+}
+
+echo "========================================"
+echo " NetWatch Fabric Status"
+echo "========================================"
+echo ""
+
+# --- FRR Containers ---
+echo "FRR Containers (12):"
+{% for node in frr_nodes %}
+check "docker inspect -f '{{"{{"}}.State.Running{{"}}"}}' {{ node.name }} 2>/dev/null | grep -q true" "{{ node.name }}"
+{% endfor %}
+
+echo ""
+
+# --- Bridges ---
+echo "Fabric Bridges ({{ links|length }}):"
+BRIDGE_UP=0
+BRIDGE_TOTAL={{ links|length }}
+{% for link in links %}
+if ip link show {{ link.bridge }} >/dev/null 2>&1; then
+    BRIDGE_UP=$((BRIDGE_UP + 1))
+fi
+{% endfor %}
+if [ "$BRIDGE_UP" -eq "$BRIDGE_TOTAL" ]; then
+    ok "All $BRIDGE_TOTAL fabric bridges up"
+    PASS=$((PASS + 1))
+else
+    fail "$BRIDGE_UP / $BRIDGE_TOTAL fabric bridges up"
+fi
+TOTAL=$((TOTAL + 1))
+
+echo ""
+echo "Management Bridge:"
+check "ip link show {{ mgmt_bridge }}" "{{ mgmt_bridge }}"
+
+echo ""
+
+# --- Management Network Reachability ---
+echo "Management Network Ping:"
+{% for node in frr_nodes %}
+check "ping -c1 -W1 {{ node.mgmt_ip }}" "{{ node.name }} ({{ node.mgmt_ip }})"
+{% endfor %}
+
+echo ""
+
+# --- BGP Summary (if spine-1 is running) ---
+echo "BGP Sessions (from spine-1):"
+if docker inspect -f '{{"{{"}}.State.Running{{"}}"}}' spine-1 2>/dev/null | grep -q true; then
+    docker exec spine-1 vtysh -c "show bgp summary" 2>/dev/null || warn "FRR not responding on spine-1"
+else
+    warn "spine-1 not running — skipping BGP check"
+fi
+
+echo ""
+
+# --- Summary ---
+echo "========================================"
+echo -e " Score: ${PASS}/${TOTAL} checks passed"
+if [ "$PASS" -eq "$TOTAL" ]; then
+    echo -e " ${GREEN}All systems operational.${NC}"
+else
+    echo -e " ${YELLOW}Some checks failed. Review above.${NC}"
+fi
+echo "========================================"

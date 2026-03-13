@@ -1,0 +1,164 @@
+# NetWatch — Prometheus configuration
+# Generated from topology.yml — DO NOT HAND-EDIT
+#
+# Scrape targets:
+#   - 12 FRR containers on port 9101 (FRR native exporter)
+#   - 18 VMs on port 9100 (node_exporter)
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+
+  # --- FRR routing containers (native Prometheus exporter) ---
+  - job_name: 'frr'
+    static_configs:
+      - targets: ['192.168.0.10:9101']
+        labels:
+          instance: 'border-1'
+          role: 'border'
+      - targets: ['192.168.0.11:9101']
+        labels:
+          instance: 'border-2'
+          role: 'border'
+      - targets: ['192.168.0.30:9101']
+        labels:
+          instance: 'leaf-1a'
+          role: 'leaf'
+          rack: 'rack-1'
+      - targets: ['192.168.0.31:9101']
+        labels:
+          instance: 'leaf-1b'
+          role: 'leaf'
+          rack: 'rack-1'
+      - targets: ['192.168.0.32:9101']
+        labels:
+          instance: 'leaf-2a'
+          role: 'leaf'
+          rack: 'rack-2'
+      - targets: ['192.168.0.33:9101']
+        labels:
+          instance: 'leaf-2b'
+          role: 'leaf'
+          rack: 'rack-2'
+      - targets: ['192.168.0.34:9101']
+        labels:
+          instance: 'leaf-3a'
+          role: 'leaf'
+          rack: 'rack-3'
+      - targets: ['192.168.0.35:9101']
+        labels:
+          instance: 'leaf-3b'
+          role: 'leaf'
+          rack: 'rack-3'
+      - targets: ['192.168.0.36:9101']
+        labels:
+          instance: 'leaf-4a'
+          role: 'leaf'
+          rack: 'rack-4'
+      - targets: ['192.168.0.37:9101']
+        labels:
+          instance: 'leaf-4b'
+          role: 'leaf'
+          rack: 'rack-4'
+      - targets: ['192.168.0.20:9101']
+        labels:
+          instance: 'spine-1'
+          role: 'spine'
+      - targets: ['192.168.0.21:9101']
+        labels:
+          instance: 'spine-2'
+          role: 'spine'
+
+  # --- VM nodes (node_exporter) ---
+  - job_name: 'node'
+    static_configs:
+      - targets: ['192.168.0.2:9100']
+        labels:
+          instance: 'bastion'
+          role: 'bastion'
+      - targets: ['192.168.0.3:9100']
+        labels:
+          instance: 'mgmt'
+          role: 'mgmt'
+      - targets: ['192.168.0.50:9100']
+        labels:
+          instance: 'srv-1-1'
+          role: 'server'
+          rack: 'rack-1'
+      - targets: ['192.168.0.51:9100']
+        labels:
+          instance: 'srv-1-2'
+          role: 'server'
+          rack: 'rack-1'
+      - targets: ['192.168.0.52:9100']
+        labels:
+          instance: 'srv-1-3'
+          role: 'server'
+          rack: 'rack-1'
+      - targets: ['192.168.0.53:9100']
+        labels:
+          instance: 'srv-1-4'
+          role: 'server'
+          rack: 'rack-1'
+      - targets: ['192.168.0.54:9100']
+        labels:
+          instance: 'srv-2-1'
+          role: 'server'
+          rack: 'rack-2'
+      - targets: ['192.168.0.55:9100']
+        labels:
+          instance: 'srv-2-2'
+          role: 'server'
+          rack: 'rack-2'
+      - targets: ['192.168.0.56:9100']
+        labels:
+          instance: 'srv-2-3'
+          role: 'server'
+          rack: 'rack-2'
+      - targets: ['192.168.0.57:9100']
+        labels:
+          instance: 'srv-2-4'
+          role: 'server'
+          rack: 'rack-2'
+      - targets: ['192.168.0.58:9100']
+        labels:
+          instance: 'srv-3-1'
+          role: 'server'
+          rack: 'rack-3'
+      - targets: ['192.168.0.59:9100']
+        labels:
+          instance: 'srv-3-2'
+          role: 'server'
+          rack: 'rack-3'
+      - targets: ['192.168.0.60:9100']
+        labels:
+          instance: 'srv-3-3'
+          role: 'server'
+          rack: 'rack-3'
+      - targets: ['192.168.0.61:9100']
+        labels:
+          instance: 'srv-3-4'
+          role: 'server'
+          rack: 'rack-3'
+      - targets: ['192.168.0.62:9100']
+        labels:
+          instance: 'srv-4-1'
+          role: 'server'
+          rack: 'rack-4'
+      - targets: ['192.168.0.63:9100']
+        labels:
+          instance: 'srv-4-2'
+          role: 'server'
+          rack: 'rack-4'
+      - targets: ['192.168.0.64:9100']
+        labels:
+          instance: 'srv-4-3'
+          role: 'server'
+          rack: 'rack-4'
+      - targets: ['192.168.0.65:9100']
+        labels:
+          instance: 'srv-4-4'
+          role: 'server'
+          rack: 'rack-4'

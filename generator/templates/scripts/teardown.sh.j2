@@ -1,0 +1,43 @@
+#!/bin/bash
+# NetWatch — Teardown
+# Generated from topology.yml — DO NOT HAND-EDIT
+#
+# Destroys all FRR containers, veth pairs, and bridges.
+# Does NOT touch VMs (use `vagrant destroy` for that).
+#
+# Run as root: sudo ./teardown.sh
+
+set -euo pipefail
+
+echo "NetWatch: Tearing down fabric..."
+
+# --- Stop and remove FRR containers ---
+echo "  Stopping FRR containers..."
+{% for node in frr_nodes %}
+docker rm -f {{ node.name }} 2>/dev/null && echo "    {{ node.name }}: removed" || echo "    {{ node.name }}: not running"
+{% endfor %}
+
+# --- Remove fabric bridges ---
+echo ""
+echo "  Removing fabric bridges..."
+{% for link in links %}
+ip link set {{ link.bridge }} down 2>/dev/null || true
+ip link del {{ link.bridge }} 2>/dev/null && echo "    {{ link.bridge }}: removed" || true
+{% endfor %}
+
+# --- Remove management bridge ---
+echo ""
+echo "  Removing management bridge..."
+ip link set {{ mgmt_bridge }} down 2>/dev/null || true
+ip link del {{ mgmt_bridge }} 2>/dev/null && echo "    {{ mgmt_bridge }}: removed" || true
+
+# --- Clean up orphaned veth pairs ---
+echo ""
+echo "  Cleaning orphaned veth pairs..."
+for veth in $(ip -o link show | grep -oP 'h-\S+(?=@)' || true); do
+    ip link del "$veth" 2>/dev/null && echo "    $veth: removed" || true
+done
+
+echo ""
+echo "NetWatch: Fabric teardown complete."
+echo "  To destroy VMs: vagrant destroy -f"

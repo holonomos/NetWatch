@@ -1,0 +1,38 @@
+# NetWatch — Prometheus configuration
+# Generated from topology.yml — DO NOT HAND-EDIT
+#
+# Scrape targets:
+#   - 12 FRR containers on port 9101 (FRR native exporter)
+#   - 18 VMs on port 9100 (node_exporter)
+
+global:
+  scrape_interval: {{ scrape_interval }}s
+  evaluation_interval: {{ scrape_interval }}s
+
+scrape_configs:
+
+  # --- FRR routing containers (native Prometheus exporter) ---
+  - job_name: 'frr'
+    static_configs:
+{% for target in frr_targets %}
+      - targets: ['{{ target.ip }}:{{ target.port }}']
+        labels:
+          instance: '{{ target.name }}'
+          role: '{{ target.role }}'
+{% if target.rack %}
+          rack: '{{ target.rack }}'
+{% endif %}
+{% endfor %}
+
+  # --- VM nodes (node_exporter) ---
+  - job_name: 'node'
+    static_configs:
+{% for target in vm_targets %}
+      - targets: ['{{ target.ip }}:{{ target.port }}']
+        labels:
+          instance: '{{ target.name }}'
+          role: '{{ target.role }}'
+{% if target.rack %}
+          rack: '{{ target.rack }}'
+{% endif %}
+{% endfor %}

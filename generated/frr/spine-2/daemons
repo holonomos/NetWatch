@@ -1,0 +1,39 @@
+# NetWatch — FRR daemon selection for spine-2
+# Generated from topology.yml — DO NOT HAND-EDIT
+#
+# Enabled daemons:
+#   zebra   — kernel routing table management
+#   bgpd    — BGP routing (eBGP, EVPN)
+#   bfdd    — BFD failure detection
+#   staticd — static route support
+#
+bgpd=yes
+ospfd=no
+ospf6d=no
+ripd=no
+ripngd=no
+isisd=no
+pimd=no
+pim6d=no
+ldpd=no
+nhrpd=no
+eigrpd=no
+babeld=no
+sharpd=no
+pbrd=no
+bfdd=yes
+fabricd=no
+vrrpd=no
+pathd=no
+zebra=yes
+staticd=yes
+
+#
+# Logging
+#
+# log_file=/var/log/frr/frr.log
+
+#
+# Prometheus metrics (FRR HTTP API)
+#
+# frr_prometheus=yes

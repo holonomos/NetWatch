@@ -1,0 +1,638 @@
+---
+# ============================================================================
+# NetWatch Topology Definition
+# ============================================================================
+# This file is the SINGLE SOURCE OF TRUTH for the entire fabric.
+# The config generator reads this to produce all FRR, Prometheus, DHCP,
+# DNS, and provisioning configurations.
+#
+# Change this file, regenerate, get a different fabric.
+# Never hand-edit generated configs.
+# ============================================================================
+
+project:
+  name: netwatch
+  version: "1.0"
+  description: >
+    30-node hyperscale data-center lab emulator built around a
+    12-node 3-tier L3 Clos routing fabric.
+
+# ============================================================================
+# CONTROL-PLANE TIMERS
+# ============================================================================
+# All control-plane timers are 10x dilated to eliminate false BFD flaps
+# from CPU scheduling jitter on shared laptop hardware.
+# Behavioral state machines are identical to production.
+# Data-plane metrics are untouched.
+
+timers:
+  dilation_factor: 10
+
+  bfd:
+    tx_interval_ms: 1000        # production equivalent: 100 ms
+    rx_interval_ms: 1000        # production equivalent: 100 ms
+    detect_multiplier: 3        # detection time: 3 s (prod: 300 ms)
+
+  bgp:
+    keepalive_s: 30             # production equivalent: 3 s
+    holdtime_s: 90              # production equivalent: 9 s
+
+# ============================================================================
+# ASN ASSIGNMENTS
+# ============================================================================
+# 6-ASN model. eBGP everywhere, no iBGP.
+# ASN-per-rack maps directly to failure domains.
+
+asn:
+  border: 65000
+  spine: 65001
+  racks:
+    rack-1: 65101
+    rack-2: 65102
+    rack-3: 65103
+    rack-4: 65104
+
+# ============================================================================
+# ADDRESS SPACE
+# ============================================================================
+# Three non-overlapping address families, each with a distinct purpose.
+#
+#   10.0.0.0/16      Loopbacks   - router-ID, SSH target, scrape target
+#   172.16.0.0/16    Fabric P2P  - /30 subnets, one per link
+#   192.168.0.0/24   Management  - OOB, isolated from routed fabric
+
+addressing:
+  loopback:
+    cidr: "10.0.0.0/16"
+    description: "Advertised into BGP. Used as router-ID and scrape target."
+
+  fabric:
+    cidr: "172.16.0.0/16"
+    description: "Point-to-point /30 subnets. Connected routes only."
+    pools:
+      border_spine: "172.16.1.0/24"
+      spine_leaf: "172.16.2.0/24"
+      leaf_server_rack1: "172.16.3.0/24"
+      leaf_server_rack2: "172.16.4.0/24"
+      leaf_server_rack3: "172.16.5.0/24"
+      leaf_server_rack4: "172.16.6.0/24"
+
+  management:
+    cidr: "192.168.0.0/24"
+    gateway: "192.168.0.1"
+    description: "OOB management. Isolated from fabric. DHCP served by mgmt node."
+
+# ============================================================================
+# NODES
+# ============================================================================
+# 30 total: 12 FRR containers + 16 server VMs + 1 bastion VM + 1 mgmt VM
+#
+# Convention:
+#   - FRR containers: Alpine-based, ~40 MB each, --network=none + manual veth
+#   - Server VMs: Fedora Cloud, KVM/Vagrant, KSM memory deduplication
+#   - IP assignment: .1 = higher-tier endpoint, .2 = lower-tier endpoint
+
+nodes:
+
+  # --- Border routers (AS 65000) -------------------------------------------
+  borders:
+    - name: border-1
+      type: frr-container
+      role: border
+      asn: 65000
+      loopback: "10.0.1.1/32"
+      mgmt_ip: "192.168.0.10"
+      metrics_port: 9101          # FRR native Prometheus exporter
+
+    - name: border-2
+      type: frr-container
+      role: border
+      asn: 65000
+      loopback: "10.0.1.2/32"
+      mgmt_ip: "192.168.0.11"
+      metrics_port: 9101
+
+  # --- Spine switches (AS 65001) -------------------------------------------
+  spines:
+    - name: spine-1
+      type: frr-container
+      role: spine
+      asn: 65001
+      loopback: "10.0.2.1/32"
+      mgmt_ip: "192.168.0.20"
+      metrics_port: 9101
+
+    - name: spine-2
+      type: frr-container
+      role: spine
+      asn: 65001
+      loopback: "10.0.2.2/32"
+      mgmt_ip: "192.168.0.21"
+      metrics_port: 9101
+
+  # --- Leaf switches (ASN per rack) ----------------------------------------
+  leafs:
+    # Rack 1 - AS 65101
+    - name: leaf-1a
+      type: frr-container
+      role: leaf
+      rack: rack-1
+      asn: 65101
+      loopback: "10.0.3.1/32"
+      mgmt_ip: "192.168.0.30"
+      metrics_port: 9101
+      evpn_vtep: true
+
+    - name: leaf-1b
+      type: frr-container
+      role: leaf
+      rack: rack-1
+      asn: 65101
+      loopback: "10.0.3.2/32"
+      mgmt_ip: "192.168.0.31"
+      metrics_port: 9101
+      evpn_vtep: true
+
+    # Rack 2 - AS 65102
+    - name: leaf-2a
+      type: frr-container
+      role: leaf
+      rack: rack-2
+      asn: 65102
+      loopback: "10.0.3.3/32"
+      mgmt_ip: "192.168.0.32"
+      metrics_port: 9101
+      evpn_vtep: true
+
+    - name: leaf-2b
+      type: frr-container
+      role: leaf
+      rack: rack-2
+      asn: 65102
+      loopback: "10.0.3.4/32"
+      mgmt_ip: "192.168.0.33"
+      metrics_port: 9101
+      evpn_vtep: true
+
+    # Rack 3 - AS 65103
+    - name: leaf-3a
+      type: frr-container
+      role: leaf
+      rack: rack-3
+      asn: 65103
+      loopback: "10.0.3.5/32"
+      mgmt_ip: "192.168.0.34"
+      metrics_port: 9101
+      evpn_vtep: true
+
+    - name: leaf-3b
+      type: frr-container
+      role: leaf
+      rack: rack-3
+      asn: 65103
+      loopback: "10.0.3.6/32"
+      mgmt_ip: "192.168.0.35"
+      metrics_port: 9101
+      evpn_vtep: true
+
+    # Rack 4 - AS 65104
+    - name: leaf-4a
+      type: frr-container
+      role: leaf
+      rack: rack-4
+      asn: 65104
+      loopback: "10.0.3.7/32"
+      mgmt_ip: "192.168.0.36"
+      metrics_port: 9101
+      evpn_vtep: true
+
+    - name: leaf-4b
+      type: frr-container
+      role: leaf
+      rack: rack-4
+      asn: 65104
+      loopback: "10.0.3.8/32"
+      mgmt_ip: "192.168.0.37"
+      metrics_port: 9101
+      evpn_vtep: true
+
+  # --- Compute servers (Fedora KVM VMs) ------------------------------------
+  # 4 racks x 4 servers per rack = 16 servers
+  # Each server is dual-homed to both leafs in its rack.
+  servers:
+    # Rack 1
+    - name: srv-1-1
+      type: fedora-vm
+      role: server
+      rack: rack-1
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.50"
+      metrics_port: 9100          # node_exporter
+
+    - name: srv-1-2
+      type: fedora-vm
+      role: server
+      rack: rack-1
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.51"
+      metrics_port: 9100
+
+    - name: srv-1-3
+      type: fedora-vm
+      role: server
+      rack: rack-1
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.52"
+      metrics_port: 9100
+
+    - name: srv-1-4
+      type: fedora-vm
+      role: server
+      rack: rack-1
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.53"
+      metrics_port: 9100
+
+    # Rack 2
+    - name: srv-2-1
+      type: fedora-vm
+      role: server
+      rack: rack-2
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.54"
+      metrics_port: 9100
+
+    - name: srv-2-2
+      type: fedora-vm
+      role: server
+      rack: rack-2
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.55"
+      metrics_port: 9100
+
+    - name: srv-2-3
+      type: fedora-vm
+      role: server
+      rack: rack-2
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.56"
+      metrics_port: 9100
+
+    - name: srv-2-4
+      type: fedora-vm
+      role: server
+      rack: rack-2
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.57"
+      metrics_port: 9100
+
+    # Rack 3
+    - name: srv-3-1
+      type: fedora-vm
+      role: server
+      rack: rack-3
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.58"
+      metrics_port: 9100
+
+    - name: srv-3-2
+      type: fedora-vm
+      role: server
+      rack: rack-3
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.59"
+      metrics_port: 9100
+
+    - name: srv-3-3
+      type: fedora-vm
+      role: server
+      rack: rack-3
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.60"
+      metrics_port: 9100
+
+    - name: srv-3-4
+      type: fedora-vm
+      role: server
+      rack: rack-3
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.61"
+      metrics_port: 9100
+
+    # Rack 4
+    - name: srv-4-1
+      type: fedora-vm
+      role: server
+      rack: rack-4
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.62"
+      metrics_port: 9100
+
+    - name: srv-4-2
+      type: fedora-vm
+      role: server
+      rack: rack-4
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.63"
+      metrics_port: 9100
+
+    - name: srv-4-3
+      type: fedora-vm
+      role: server
+      rack: rack-4
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.64"
+      metrics_port: 9100
+
+    - name: srv-4-4
+      type: fedora-vm
+      role: server
+      rack: rack-4
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.65"
+      metrics_port: 9100
+
+  # --- Infrastructure nodes ------------------------------------------------
+  infrastructure:
+    - name: bastion
+      type: fedora-vm
+      role: bastion
+      vcpu: 1
+      memory_mb: 512
+      mgmt_ip: "192.168.0.2"
+      metrics_port: 9100
+      description: "SSH jump host and NAT gateway for fabric"
+
+    - name: mgmt
+      type: fedora-vm
+      role: mgmt
+      vcpu: 2
+      memory_mb: 1024
+      mgmt_ip: "192.168.0.3"
+      metrics_port: 9100
+      services:
+        - prometheus:  9090
+        - grafana:     3000
+        - loki:        3100
+        - dnsmasq:     53
+        - chrony:      123
+      description: "Observability stack, DHCP/DNS, NTP"
+
+# ============================================================================
+# FABRIC LINKS
+# ============================================================================
+# Every point-to-point link in the routed fabric.
+# Each link maps to one Linux bridge with two veth endpoints.
+#
+# Convention:
+#   - a_ip: higher-tier node (border > spine > leaf > server)
+#   - b_ip: lower-tier node
+#   - subnet: /30 allocation from the appropriate pool
+#
+# Total: 4 border-spine + 16 spine-leaf + 32 leaf-server = 52 links
+# BGP sessions: 4 border-spine + 16 spine-leaf = 20 sessions
+
+links:
+
+  # --- Border <-> Spine (4 links) ------------------------------------------
+  border_spine:
+    - a: border-1
+      b: spine-1
+      subnet: "172.16.1.0/30"
+      a_ip: "172.16.1.1"
+      b_ip: "172.16.1.2"
+
+    - a: border-1
+      b: spine-2
+      subnet: "172.16.1.4/30"
+      a_ip: "172.16.1.5"
+      b_ip: "172.16.1.6"
+
+    - a: border-2
+      b: spine-1
+      subnet: "172.16.1.8/30"
+      a_ip: "172.16.1.9"
+      b_ip: "172.16.1.10"
+
+    - a: border-2
+      b: spine-2
+      subnet: "172.16.1.12/30"
+      a_ip: "172.16.1.13"
+      b_ip: "172.16.1.14"
+
+  # --- Spine <-> Leaf (16 links) -------------------------------------------
+  spine_leaf:
+    # spine-1 to all 8 leafs
+    - { a: spine-1, b: leaf-1a, subnet: "172.16.2.0/30",  a_ip: "172.16.2.1",  b_ip: "172.16.2.2"  }
+    - { a: spine-1, b: leaf-1b, subnet: "172.16.2.4/30",  a_ip: "172.16.2.5",  b_ip: "172.16.2.6"  }
+    - { a: spine-1, b: leaf-2a, subnet: "172.16.2.8/30",  a_ip: "172.16.2.9",  b_ip: "172.16.2.10" }
+    - { a: spine-1, b: leaf-2b, subnet: "172.16.2.12/30", a_ip: "172.16.2.13", b_ip: "172.16.2.14" }
+    - { a: spine-1, b: leaf-3a, subnet: "172.16.2.16/30", a_ip: "172.16.2.17", b_ip: "172.16.2.18" }
+    - { a: spine-1, b: leaf-3b, subnet: "172.16.2.20/30", a_ip: "172.16.2.21", b_ip: "172.16.2.22" }
+    - { a: spine-1, b: leaf-4a, subnet: "172.16.2.24/30", a_ip: "172.16.2.25", b_ip: "172.16.2.26" }
+    - { a: spine-1, b: leaf-4b, subnet: "172.16.2.28/30", a_ip: "172.16.2.29", b_ip: "172.16.2.30" }
+
+    # spine-2 to all 8 leafs
+    - { a: spine-2, b: leaf-1a, subnet: "172.16.2.32/30", a_ip: "172.16.2.33", b_ip: "172.16.2.34" }
+    - { a: spine-2, b: leaf-1b, subnet: "172.16.2.36/30", a_ip: "172.16.2.37", b_ip: "172.16.2.38" }
+    - { a: spine-2, b: leaf-2a, subnet: "172.16.2.40/30", a_ip: "172.16.2.41", b_ip: "172.16.2.42" }
+    - { a: spine-2, b: leaf-2b, subnet: "172.16.2.44/30", a_ip: "172.16.2.45", b_ip: "172.16.2.46" }
+    - { a: spine-2, b: leaf-3a, subnet: "172.16.2.48/30", a_ip: "172.16.2.49", b_ip: "172.16.2.50" }
+    - { a: spine-2, b: leaf-3b, subnet: "172.16.2.52/30", a_ip: "172.16.2.53", b_ip: "172.16.2.54" }
+    - { a: spine-2, b: leaf-4a, subnet: "172.16.2.56/30", a_ip: "172.16.2.57", b_ip: "172.16.2.58" }
+    - { a: spine-2, b: leaf-4b, subnet: "172.16.2.60/30", a_ip: "172.16.2.61", b_ip: "172.16.2.62" }
+
+  # --- Leaf <-> Server (32 links) ------------------------------------------
+  # Each server dual-homed: one link to leaf-Xa, one link to leaf-Xb.
+  # Servers use ECMP default route via both leafs.
+  # Leafs advertise connected /30 subnets into BGP.
+  leaf_server:
+
+    # Rack 1 (172.16.3.0/24)
+    - { a: leaf-1a, b: srv-1-1, subnet: "172.16.3.0/30",  a_ip: "172.16.3.1",  b_ip: "172.16.3.2"  }
+    - { a: leaf-1b, b: srv-1-1, subnet: "172.16.3.4/30",  a_ip: "172.16.3.5",  b_ip: "172.16.3.6"  }
+    - { a: leaf-1a, b: srv-1-2, subnet: "172.16.3.8/30",  a_ip: "172.16.3.9",  b_ip: "172.16.3.10" }
+    - { a: leaf-1b, b: srv-1-2, subnet: "172.16.3.12/30", a_ip: "172.16.3.13", b_ip: "172.16.3.14" }
+    - { a: leaf-1a, b: srv-1-3, subnet: "172.16.3.16/30", a_ip: "172.16.3.17", b_ip: "172.16.3.18" }
+    - { a: leaf-1b, b: srv-1-3, subnet: "172.16.3.20/30", a_ip: "172.16.3.21", b_ip: "172.16.3.22" }
+    - { a: leaf-1a, b: srv-1-4, subnet: "172.16.3.24/30", a_ip: "172.16.3.25", b_ip: "172.16.3.26" }
+    - { a: leaf-1b, b: srv-1-4, subnet: "172.16.3.28/30", a_ip: "172.16.3.29", b_ip: "172.16.3.30" }
+
+    # Rack 2 (172.16.4.0/24)
+    - { a: leaf-2a, b: srv-2-1, subnet: "172.16.4.0/30",  a_ip: "172.16.4.1",  b_ip: "172.16.4.2"  }
+    - { a: leaf-2b, b: srv-2-1, subnet: "172.16.4.4/30",  a_ip: "172.16.4.5",  b_ip: "172.16.4.6"  }
+    - { a: leaf-2a, b: srv-2-2, subnet: "172.16.4.8/30",  a_ip: "172.16.4.9",  b_ip: "172.16.4.10" }
+    - { a: leaf-2b, b: srv-2-2, subnet: "172.16.4.12/30", a_ip: "172.16.4.13", b_ip: "172.16.4.14" }
+    - { a: leaf-2a, b: srv-2-3, subnet: "172.16.4.16/30", a_ip: "172.16.4.17", b_ip: "172.16.4.18" }
+    - { a: leaf-2b, b: srv-2-3, subnet: "172.16.4.20/30", a_ip: "172.16.4.21", b_ip: "172.16.4.22" }
+    - { a: leaf-2a, b: srv-2-4, subnet: "172.16.4.24/30", a_ip: "172.16.4.25", b_ip: "172.16.4.26" }
+    - { a: leaf-2b, b: srv-2-4, subnet: "172.16.4.28/30", a_ip: "172.16.4.29", b_ip: "172.16.4.30" }
+
+    # Rack 3 (172.16.5.0/24)
+    - { a: leaf-3a, b: srv-3-1, subnet: "172.16.5.0/30",  a_ip: "172.16.5.1",  b_ip: "172.16.5.2"  }
+    - { a: leaf-3b, b: srv-3-1, subnet: "172.16.5.4/30",  a_ip: "172.16.5.5",  b_ip: "172.16.5.6"  }
+    - { a: leaf-3a, b: srv-3-2, subnet: "172.16.5.8/30",  a_ip: "172.16.5.9",  b_ip: "172.16.5.10" }
+    - { a: leaf-3b, b: srv-3-2, subnet: "172.16.5.12/30", a_ip: "172.16.5.13", b_ip: "172.16.5.14" }
+    - { a: leaf-3a, b: srv-3-3, subnet: "172.16.5.16/30", a_ip: "172.16.5.17", b_ip: "172.16.5.18" }
+    - { a: leaf-3b, b: srv-3-3, subnet: "172.16.5.20/30", a_ip: "172.16.5.21", b_ip: "172.16.5.22" }
+    - { a: leaf-3a, b: srv-3-4, subnet: "172.16.5.24/30", a_ip: "172.16.5.25", b_ip: "172.16.5.26" }
+    - { a: leaf-3b, b: srv-3-4, subnet: "172.16.5.28/30", a_ip: "172.16.5.29", b_ip: "172.16.5.30" }
+
+    # Rack 4 (172.16.6.0/24)
+    - { a: leaf-4a, b: srv-4-1, subnet: "172.16.6.0/30",  a_ip: "172.16.6.1",  b_ip: "172.16.6.2"  }
+    - { a: leaf-4b, b: srv-4-1, subnet: "172.16.6.4/30",  a_ip: "172.16.6.5",  b_ip: "172.16.6.6"  }
+    - { a: leaf-4a, b: srv-4-2, subnet: "172.16.6.8/30",  a_ip: "172.16.6.9",  b_ip: "172.16.6.10" }
+    - { a: leaf-4b, b: srv-4-2, subnet: "172.16.6.12/30", a_ip: "172.16.6.13", b_ip: "172.16.6.14" }
+    - { a: leaf-4a, b: srv-4-3, subnet: "172.16.6.16/30", a_ip: "172.16.6.17", b_ip: "172.16.6.18" }
+    - { a: leaf-4b, b: srv-4-3, subnet: "172.16.6.20/30", a_ip: "172.16.6.21", b_ip: "172.16.6.22" }
+    - { a: leaf-4a, b: srv-4-4, subnet: "172.16.6.24/30", a_ip: "172.16.6.25", b_ip: "172.16.6.26" }
+    - { a: leaf-4b, b: srv-4-4, subnet: "172.16.6.28/30", a_ip: "172.16.6.29", b_ip: "172.16.6.30" }
+
+# ============================================================================
+# MANAGEMENT NETWORK
+# ============================================================================
+# Single Linux bridge (br-mgmt) connecting all 30 nodes for OOB access.
+# Isolated from the routed fabric. DHCP/DNS served by mgmt node.
+
+management:
+  bridge: br-mgmt
+  cidr: "192.168.0.0/24"
+  gateway: "192.168.0.1"        # host interface on br-mgmt
+  dhcp_server: mgmt             # dnsmasq runs here
+  dns_domain: "netwatch.lab"
+
+# ============================================================================
+# OBSERVABILITY
+# ============================================================================
+
+observability:
+  prometheus:
+    host: mgmt
+    port: 9090
+    scrape_interval_s: 15
+    targets:
+      frr_containers:
+        port: 9101              # FRR native Prometheus exporter
+        nodes:
+          - border-1
+          - border-2
+          - spine-1
+          - spine-2
+          - leaf-1a
+          - leaf-1b
+          - leaf-2a
+          - leaf-2b
+          - leaf-3a
+          - leaf-3b
+          - leaf-4a
+          - leaf-4b
+      vm_nodes:
+        port: 9100              # node_exporter
+        nodes:
+          - srv-1-1
+          - srv-1-2
+          - srv-1-3
+          - srv-1-4
+          - srv-2-1
+          - srv-2-2
+          - srv-2-3
+          - srv-2-4
+          - srv-3-1
+          - srv-3-2
+          - srv-3-3
+          - srv-3-4
+          - srv-4-1
+          - srv-4-2
+          - srv-4-3
+          - srv-4-4
+          - bastion
+          - mgmt
+
+  grafana:
+    host: mgmt
+    port: 3000
+    dashboards:
+      - fabric-overview
+      - bgp-status
+      - node-detail
+      - interface-counters
+      - chaos-events
+      - evpn-vxlan
+
+  loki:
+    host: mgmt
+    port: 3100
+    description: "rsyslog from all nodes -> Loki -> Grafana LogQL"
+
+# ============================================================================
+# EVPN / VXLAN (OVERLAY - LATE PHASE)
+# ============================================================================
+# Implemented after the underlay is proven (post P6).
+# Leafs are VTEPs. MP-BGP L2VPN address family.
+
+evpn:
+  enabled: true
+  vni_base: 10000
+  vtep_nodes:
+    - leaf-1a
+    - leaf-1b
+    - leaf-2a
+    - leaf-2b
+    - leaf-3a
+    - leaf-3b
+    - leaf-4a
+    - leaf-4b
+  description: "VNI-per-tenant overlay. Leaf VTEPs. Implemented in Phase 7."
+
+# ============================================================================
+# VALIDATION (ADDON LAYER - NOT CORE ARCHITECTURE)
+# ============================================================================
+
+validation:
+  infrastructure_chaos:
+    tool: "tc netem + custom scripts"
+    phase: "P6"
+    scenarios:
+      - link-down
+      - link-flap
+      - latency-injection
+      - packet-loss
+      - packet-corruption
+      - rack-partition
+      - node-kill
+
+  workload_chaos:
+    tool: "chaos-mesh"
+    phase: "P7"
+    install: "helm install chaos-mesh chaos-mesh/chaos-mesh -n chaos-mesh"
+    scenarios:
+      - pod-kill
+      - pod-failure
+      - network-partition
+      - network-delay
+      - node-drain
+
+  success_criteria:
+    workload: "replicated nginx (3+ replicas across racks)"
+    availability: ">99% over 10-minute chaos run"
+    max_outage: "<3 seconds"
+    description: >
+      Chaos Mesh runs unmodified against the k3s validation layer.
+      If the chaos tooling cannot distinguish the emulated fabric
+      from production infrastructure, the project succeeds.

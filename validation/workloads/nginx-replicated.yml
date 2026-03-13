@@ -1,0 +1,72 @@
+---
+# NetWatch — Validation Workload
+# Replicated nginx with anti-affinity across racks.
+# Used by Chaos Mesh to validate >99% availability under chaos.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-validation
+  namespace: default
+  labels:
+    app: nginx-validation
+    netwatch: validation
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: nginx-validation
+  template:
+    metadata:
+      labels:
+        app: nginx-validation
+    spec:
+      # Anti-affinity: spread replicas across different nodes (racks)
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - nginx-validation
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-validation
+  namespace: default
+spec:
+  selector:
+    app: nginx-validation
+  ports:
+    - port: 80
+      targetPort: 80
+  type: ClusterIP
