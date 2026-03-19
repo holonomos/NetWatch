@@ -47,8 +47,6 @@ wire_link() {
     local container="$1"
     local ifname="$2"
     local bridge="$3"
-    local ip_addr="$4"
-    local prefix_len="$5"
 
     local pid
     pid=$(get_pid "$container")
@@ -66,8 +64,7 @@ wire_link() {
     ip link set "$host_veth" master "$bridge"
     ip link set "$host_veth" up
 
-    # Configure inside container namespace
-    nsenter -t "$pid" -n ip addr add "${ip_addr}/${prefix_len}" dev "$ifname"
+    # Bring up the interface — FRR assigns IPs from frr.conf
     nsenter -t "$pid" -n ip link set "$ifname" up
 }
 
@@ -96,11 +93,11 @@ wire_mgmt() {
 {% for link in links %}
 {% if link.a_name in frr_nodes|map(attribute='name')|list %}
 echo "  {{ link.bridge }}: {{ link.a_name }}({{ link.a_ifname }}) <-> bridge"
-wire_link "{{ link.a_name }}" "{{ link.a_ifname }}" "{{ link.bridge }}" "{{ link.a_ip }}" "{{ link.subnet.split('/')[1] }}"
+wire_link "{{ link.a_name }}" "{{ link.a_ifname }}" "{{ link.bridge }}"
 {% endif %}
 {% if link.b_name in frr_nodes|map(attribute='name')|list %}
 echo "  {{ link.bridge }}: {{ link.b_name }}({{ link.b_ifname }}) <-> bridge"
-wire_link "{{ link.b_name }}" "{{ link.b_ifname }}" "{{ link.bridge }}" "{{ link.b_ip }}" "{{ link.subnet.split('/')[1] }}"
+wire_link "{{ link.b_name }}" "{{ link.b_ifname }}" "{{ link.bridge }}"
 {% endif %}
 {% endfor %}
 

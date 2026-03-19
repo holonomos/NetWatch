@@ -1,23 +1,20 @@
 #!/bin/bash
 # NetWatch — Bridge Setup
-# Generated from topology.yml — DO NOT HAND-EDIT
-#
-# Creates all fabric bridges (52 P2P + 1 management).
-# All fabric bridges have STP disabled (L3 routing, not L2 switching).
-#
-# Run as root: sudo ./setup-bridges.sh
+# Generated from topology.yml — DO NOT HAND-EDIT unless you know exactly what you're doing, still don't honestly.
+# fabric bridges (52 P2P + 1 management).
+# All fabric bridges have STP disabled (L3 routing, not L2 switching) for obvious reasons. The management bridge has STP disabled as well, for simplicity.
+# Run as root, obviusly. If you do not have admin privileges, step away from the machine, now. 
+
+
+
 
 set -euo pipefail
 
 echo "NetWatch: Creating fabric bridges..."
 
 # --- Management bridge ---
-echo "  [mgmt] br-mgmt"
-ip link add br-mgmt type bridge 2>/dev/null || true
-ip link set br-mgmt up
-ip addr add 192.168.0.1/24 dev br-mgmt 2>/dev/null || true
-# STP off on management bridge too
-echo 0 > /sys/class/net/br-mgmt/bridge/stp_state 2>/dev/null || true
+# Managed by libvirt (virbr2) — do NOT create or delete it here.
+echo "  [mgmt] virbr2 (libvirt-managed, skipping creation)"
 
 # --- Fabric bridges (STP disabled, no IP) ---
 echo "  [border_spine] br000 (border-1 <-> spine-1)"
@@ -230,5 +227,5 @@ echo 0 > /sys/class/net/br051/bridge/stp_state
 ip link set br051 up
 
 echo ""
-echo "NetWatch: 52 fabric bridges + 1 mgmt bridge created."
-echo "  Total: 53 bridges, all STP disabled."
+echo "NetWatch: 52 fabric bridges created (STP disabled)."
+echo "  Mgmt bridge: virbr2 (libvirt-managed)."

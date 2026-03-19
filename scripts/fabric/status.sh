@@ -224,7 +224,7 @@ TOTAL=$((TOTAL + 1))
 
 echo ""
 echo "Management Bridge:"
-check "ip link show br-mgmt" "br-mgmt"
+check "ip link show virbr2" "virbr2"
 
 echo ""
 

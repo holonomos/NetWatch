@@ -511,7 +511,7 @@ links:
 # Isolated from the routed fabric. DHCP/DNS served by mgmt node.
 
 management:
-  bridge: br-mgmt
+  bridge: virbr2
   cidr: "192.168.0.0/24"
   gateway: "192.168.0.1"        # host interface on br-mgmt
   dhcp_server: mgmt             # dnsmasq runs here

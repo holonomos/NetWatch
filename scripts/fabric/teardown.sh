@@ -134,11 +134,8 @@ ip link del br050 2>/dev/null && echo "    br050: removed" || true
 ip link set br051 down 2>/dev/null || true
 ip link del br051 2>/dev/null && echo "    br051: removed" || true
 
-# --- Remove management bridge ---
-echo ""
-echo "  Removing management bridge..."
-ip link set br-mgmt down 2>/dev/null || true
-ip link del br-mgmt 2>/dev/null && echo "    br-mgmt: removed" || true
+# --- Management bridge ---
+# Managed by libvirt — do NOT delete it here.
 
 # --- Clean up orphaned veth pairs ---
 echo ""
