@@ -123,6 +123,12 @@
 
 ---
 
+
+done
+done
+done
+
+
 ## PHASE 3 — CORE LAB
 > All 30 nodes running and reachable on the management network.
 
@@ -184,7 +190,7 @@
 
 ### Management network connectivity
 
-- [ ] **3.15** Ping all 12 FRR containers on management IPs
+- [ ] **3.15** ping all 12 FRR containers on management IPs
       `for ip in 192.168.0.{10,11,20,21,30,31,32,33,34,35,36,37}; do
         ping -c1 -W1 $ip; done`
 

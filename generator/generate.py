@@ -158,6 +158,7 @@ def build_link_registry(topo: dict, nodes: dict) -> list:
             a_iface = {
                 "name": a_ifname,
                 "ip": a_ip,
+                "peer_ip": b_ip,
                 "prefix_len": int(subnet.split("/")[1]),
                 "subnet": subnet,
                 "peer": b_name,
@@ -166,6 +167,7 @@ def build_link_registry(topo: dict, nodes: dict) -> list:
             b_iface = {
                 "name": b_ifname,
                 "ip": b_ip,
+                "peer_ip": a_ip,
                 "prefix_len": int(subnet.split("/")[1]),
                 "subnet": subnet,
                 "peer": a_name,
@@ -321,11 +323,20 @@ def build_bridge_context(all_links: list, nodes: dict, topo: dict) -> dict:
             })
 
     server_nodes = []
+    srv_index = 0
     for name, node in sorted(nodes.items()):
         if node["role"] == "server":
+            srv_index += 1
+            # Generate deterministic MACs for fabric NICs (leaf-a and leaf-b)
+            # Format: 02:4E:57:06:XX:01 (leaf-a), 02:4E:57:06:XX:02 (leaf-b)
+            leaf_a_mac = f"02:4E:57:06:{srv_index:02X}:01"
+            leaf_b_mac = f"02:4E:57:06:{srv_index:02X}:02"
             server_nodes.append({
                 "name": name,
+                "mgmt_ip": node["mgmt_ip"],
                 "interfaces": node["interfaces"],
+                "leaf_a_mac": leaf_a_mac,
+                "leaf_b_mac": leaf_b_mac,
             })
 
     return {
@@ -431,6 +442,13 @@ def render_templates(topo: dict, nodes: dict, all_links: list,
         f.write(status_tmpl.render(bridge_ctx))
     os.chmod(os.path.join(scripts_dir, "status.sh"), 0o755)
     print(f"  [Scripts]    status          → scripts/fabric/")
+
+    # --- Server links script ---
+    server_links_tmpl = env.get_template("scripts/setup-server-links.sh.j2")
+    with open(os.path.join(scripts_dir, "setup-server-links.sh"), "w") as f:
+        f.write(server_links_tmpl.render(bridge_ctx))
+    os.chmod(os.path.join(scripts_dir, "setup-server-links.sh"), 0o755)
+    print(f"  [Scripts]    server-links    → scripts/fabric/")
 
 
 # ---------------------------------------------------------------------------

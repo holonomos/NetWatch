@@ -1,0 +1,119 @@
+#!/bin/bash
+# NetWatch — Server Fabric Wiring
+# Generated from topology.yml — DO NOT HAND-EDIT
+#
+# Hot-plugs two fabric NICs into each server VM (via virsh),
+# then configures IPs and ECMP default routes inside the VMs.
+#
+# Prerequisites: VMs running (vagrant up), fabric bridges exist (setup-bridges.sh).
+# Run as root: sudo ./setup-server-links.sh
+
+set -euo pipefail
+
+VIRSH_PREFIX="NetWatch"
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+echo "NetWatch: Wiring server VMs to fabric bridges..."
+
+# Helper: attach a NIC to a VM on a given bridge (idempotent)
+attach_nic() {
+    local vm="$1"
+    local bridge="$2"
+    local mac="$3"
+    local domain="${VIRSH_PREFIX}_${vm}"
+
+    if virsh domiflist "$domain" 2>/dev/null | grep -q "$mac"; then
+        echo "    $bridge ($mac): already attached"
+        return 0
+    fi
+
+    virsh attach-interface "$domain" \
+        --type bridge \
+        --source "$bridge" \
+        --model virtio \
+        --mac "$mac" \
+        --live \
+        --config
+    echo "    $bridge ($mac): attached"
+}
+
+# Helper: configure interfaces inside VM by MAC address
+configure_vm() {
+    local vm="$1"
+    local mgmt_ip="$2"
+    local mac_a="$3"
+    local ip_a="$4"
+    local gw_a="$5"
+    local mac_b="$6"
+    local ip_b="$7"
+    local gw_b="$8"
+    local prefix="$9"
+
+    local key="$PROJECT_ROOT/.vagrant/machines/${vm}/libvirt/private_key"
+    local ssh_opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+
+    ssh $ssh_opts -i "$key" vagrant@"$mgmt_ip" bash <<REMOTESCRIPT
+set -e
+
+# Find interface by MAC address (compare lowercase)
+find_if_by_mac() {
+    local target_mac="\$(echo \$1 | tr '[:upper:]' '[:lower:]')"
+    for iface in /sys/class/net/*; do
+        iname=\$(basename "\$iface")
+        [ "\$iname" = "lo" ] && continue
+        mac=\$(cat "\$iface/address" 2>/dev/null || true)
+        if [ "\$mac" = "\$target_mac" ]; then
+            echo "\$iname"
+            return 0
+        fi
+    done
+    return 1
+}
+
+IF_A=\$(find_if_by_mac "$mac_a") || { echo "ERROR: no interface with MAC $mac_a"; exit 1; }
+IF_B=\$(find_if_by_mac "$mac_b") || { echo "ERROR: no interface with MAC $mac_b"; exit 1; }
+
+# Configure leaf-a interface
+sudo ip addr flush dev \$IF_A 2>/dev/null || true
+sudo ip addr add ${ip_a}/${prefix} dev \$IF_A
+sudo ip link set \$IF_A up
+
+# Configure leaf-b interface
+sudo ip addr flush dev \$IF_B 2>/dev/null || true
+sudo ip addr add ${ip_b}/${prefix} dev \$IF_B
+sudo ip link set \$IF_B up
+
+# ECMP routes for fabric prefixes (don't touch default — NetworkManager owns it)
+sudo ip route replace 10.0.0.0/8 \
+    nexthop via ${gw_a} dev \$IF_A weight 1 \
+    nexthop via ${gw_b} dev \$IF_B weight 1
+sudo ip route replace 172.16.0.0/12 \
+    nexthop via ${gw_a} dev \$IF_A weight 1 \
+    nexthop via ${gw_b} dev \$IF_B weight 1
+
+echo "  \$IF_A = ${ip_a}/${prefix} → gw ${gw_a}"
+echo "  \$IF_B = ${ip_b}/${prefix} → gw ${gw_b}"
+echo "  ECMP fabric routes installed (10.0.0.0/8, 172.16.0.0/12)"
+REMOTESCRIPT
+}
+
+# --- Wire each server ---
+{% for server in server_nodes %}
+{% set if_a = server.interfaces[0] %}
+{% set if_b = server.interfaces[1] %}
+echo ""
+echo "{{ server.name }}: {{ if_a.bridge }} ({{ if_a.peer }}) + {{ if_b.bridge }} ({{ if_b.peer }})"
+attach_nic "{{ server.name }}" "{{ if_a.bridge }}" "{{ server.leaf_a_mac }}"
+attach_nic "{{ server.name }}" "{{ if_b.bridge }}" "{{ server.leaf_b_mac }}"
+configure_vm "{{ server.name }}" "{{ server.mgmt_ip }}" \
+    "{{ server.leaf_a_mac }}" "{{ if_a.ip }}" "{{ if_a.peer_ip }}" \
+    "{{ server.leaf_b_mac }}" "{{ if_b.ip }}" "{{ if_b.peer_ip }}" \
+    "{{ if_a.prefix_len }}"
+{% endfor %}
+
+echo ""
+echo "NetWatch: All 16 servers wired to fabric."
+echo "  - 2 NICs per server (leaf-a + leaf-b)"
+echo "  - ECMP default routes installed"
+echo ""
+echo "Verify: vagrant ssh srv-1-1 -c 'ip route show 10.0.0.0/8'"
