@@ -1,0 +1,18 @@
+# Generated configs (regenerate with: python3 generator/generate.py)
+generated/
+
+# Local package repository (rebuild with: bash scripts/repo/build-repo.sh)
+repo/fedora/
+repo/binaries/
+repo/.serve.pid
+repo/.serve.log
+
+# Vagrant box image (too large for git, distribute separately)
+*.box
+
+# Vagrant state
+.vagrant/
+
+# Python
+__pycache__/
+*.pyc

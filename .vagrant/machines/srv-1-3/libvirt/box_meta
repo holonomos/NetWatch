@@ -1,1 +1,1 @@
-{"name":"fedora/40-cloud-base","version":"0","provider":"libvirt","directory":"boxes/fedora-VAGRANTSLASH-40-cloud-base/0/amd64/libvirt"}
+{"name":"netwatch-golden","version":"0","provider":"libvirt","directory":"boxes/netwatch-golden/0/amd64/libvirt"}

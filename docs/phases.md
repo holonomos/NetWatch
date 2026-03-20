@@ -27,10 +27,9 @@ docker run --rm --network=none alpine echo ok   # --network=none works
 # FRR image
 docker pull quay.io/frrouting/frr:9.1.0
 docker run --rm quay.io/frrouting/frr:9.1.0 vtysh -c "show version"
-# Verify Prometheus exporter: check if HTTP API is compiled in
-docker run --rm -d --name frr-test quay.io/frrouting/frr:9.1.0
-docker exec frr-test curl -s http://localhost:9101/metrics || echo "NO EXPORTER"
-docker stop frr-test
+# FRR 9.1.0 has no native Prometheus exporter — using frr_exporter sidecar
+# Verify frr_exporter is working (after setup-frr-containers.sh):
+#   curl -s http://192.168.0.10:9342/metrics | head
 
 # Python
 python3 --version                       # 3.10+

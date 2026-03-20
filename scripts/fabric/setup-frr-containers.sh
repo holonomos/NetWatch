@@ -9,6 +9,7 @@
 #   4. Assigns IP addresses inside the namespace
 #   5. Connects each container to the management bridge
 #   6. Applies sysctls (ip_forward=1, rp_filter=2)
+#   7. Starts frr_exporter sidecar for Prometheus metrics
 #
 # Prerequisites: setup-bridges.sh has already run.
 # Run as root: sudo ./setup-frr-containers.sh
@@ -16,7 +17,48 @@
 set -euo pipefail
 
 FRR_IMAGE="quay.io/frrouting/frr:9.1.0"
+FRR_EXPORTER_VERSION="1.10.1"
+FRR_EXPORTER_BIN="/usr/local/bin/frr_exporter"
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+# --- Resolve management bridge dynamically ---
+MGMT_BRIDGE=$(virsh net-info netwatch-mgmt 2>/dev/null | awk '/Bridge:/{print $2}')
+if [ -z "$MGMT_BRIDGE" ]; then
+    echo "ERROR: Could not resolve bridge for libvirt network 'netwatch-mgmt'"
+    echo "  Is the network created? Check: virsh net-list --all"
+    exit 1
+fi
+echo "  Management bridge: $MGMT_BRIDGE"
+
+# --- Ensure frr_exporter is available on the host ---
+if [ ! -x "$FRR_EXPORTER_BIN" ]; then
+    TARBALL="${PROJECT_ROOT}/repo/binaries/frr_exporter-${FRR_EXPORTER_VERSION}.linux-amd64.tar.gz"
+    if [ -f "$TARBALL" ]; then
+        echo "  Installing frr_exporter v${FRR_EXPORTER_VERSION} from repo/binaries/..."
+        TMPDIR=$(mktemp -d)
+        tar xz -C "$TMPDIR" -f "$TARBALL"
+        find "$TMPDIR" -name "frr_exporter" -type f -exec mv {} "$FRR_EXPORTER_BIN" \;
+        chmod +x "$FRR_EXPORTER_BIN"
+        rm -rf "$TMPDIR"
+    else
+        echo "ERROR: frr_exporter not found at $FRR_EXPORTER_BIN or $TARBALL"
+        echo "  Run: bash scripts/bake-golden-image.sh (or manually place the tarball)"
+        exit 1
+    fi
+fi
+
+# --- Docker Loki logging driver ---
+LOKI_DRIVER_ARGS=""
+if docker plugin inspect loki >/dev/null 2>&1; then
+    LOKI_DRIVER_ARGS="--log-driver=loki --log-opt loki-url=http://192.168.0.3:3100/loki/api/v1/push --log-opt loki-retries=5 --log-opt loki-batch-size=102400"
+else
+    echo "  Installing Docker Loki logging driver..."
+    if docker plugin install grafana/loki-docker-driver:latest --alias loki --grant-all-permissions 2>/dev/null; then
+        LOKI_DRIVER_ARGS="--log-driver=loki --log-opt loki-url=http://192.168.0.3:3100/loki/api/v1/push --log-opt loki-retries=5 --log-opt loki-batch-size=102400"
+    else
+        echo "  WARNING: Loki Docker driver not available — FRR logs will use default driver"
+    fi
+fi
 
 echo "NetWatch: Starting FRR containers..."
 
@@ -29,7 +71,10 @@ docker run -d \
     --privileged \
     --hostname border-1 \
     --label netwatch=frr \
+    $LOKI_DRIVER_ARGS \
+    ${LOKI_DRIVER_ARGS:+--log-opt loki-external-labels=container=border-1} \
     -v "$PROJECT_ROOT/generated/frr/border-1:/etc/frr" \
+    -v "$FRR_EXPORTER_BIN:/usr/local/bin/frr_exporter:ro" \
     "$FRR_IMAGE"
 echo "  Starting border-2..."
 docker rm -f border-2 2>/dev/null || true
@@ -39,7 +84,10 @@ docker run -d \
     --privileged \
     --hostname border-2 \
     --label netwatch=frr \
+    $LOKI_DRIVER_ARGS \
+    ${LOKI_DRIVER_ARGS:+--log-opt loki-external-labels=container=border-2} \
     -v "$PROJECT_ROOT/generated/frr/border-2:/etc/frr" \
+    -v "$FRR_EXPORTER_BIN:/usr/local/bin/frr_exporter:ro" \
     "$FRR_IMAGE"
 echo "  Starting leaf-1a..."
 docker rm -f leaf-1a 2>/dev/null || true
@@ -49,7 +97,10 @@ docker run -d \
     --privileged \
     --hostname leaf-1a \
     --label netwatch=frr \
+    $LOKI_DRIVER_ARGS \
+    ${LOKI_DRIVER_ARGS:+--log-opt loki-external-labels=container=leaf-1a} \
     -v "$PROJECT_ROOT/generated/frr/leaf-1a:/etc/frr" \
+    -v "$FRR_EXPORTER_BIN:/usr/local/bin/frr_exporter:ro" \
     "$FRR_IMAGE"
 echo "  Starting leaf-1b..."
 docker rm -f leaf-1b 2>/dev/null || true
@@ -59,7 +110,10 @@ docker run -d \
     --privileged \
     --hostname leaf-1b \
     --label netwatch=frr \
+    $LOKI_DRIVER_ARGS \
+    ${LOKI_DRIVER_ARGS:+--log-opt loki-external-labels=container=leaf-1b} \
     -v "$PROJECT_ROOT/generated/frr/leaf-1b:/etc/frr" \
+    -v "$FRR_EXPORTER_BIN:/usr/local/bin/frr_exporter:ro" \
     "$FRR_IMAGE"
 echo "  Starting leaf-2a..."
 docker rm -f leaf-2a 2>/dev/null || true
@@ -69,7 +123,10 @@ docker run -d \
     --privileged \
     --hostname leaf-2a \
     --label netwatch=frr \
+    $LOKI_DRIVER_ARGS \
+    ${LOKI_DRIVER_ARGS:+--log-opt loki-external-labels=container=leaf-2a} \
     -v "$PROJECT_ROOT/generated/frr/leaf-2a:/etc/frr" \
+    -v "$FRR_EXPORTER_BIN:/usr/local/bin/frr_exporter:ro" \
     "$FRR_IMAGE"
 echo "  Starting leaf-2b..."
 docker rm -f leaf-2b 2>/dev/null || true
@@ -79,7 +136,10 @@ docker run -d \
     --privileged \
     --hostname leaf-2b \
     --label netwatch=frr \
+    $LOKI_DRIVER_ARGS \
+    ${LOKI_DRIVER_ARGS:+--log-opt loki-external-labels=container=leaf-2b} \
     -v "$PROJECT_ROOT/generated/frr/leaf-2b:/etc/frr" \
+    -v "$FRR_EXPORTER_BIN:/usr/local/bin/frr_exporter:ro" \
     "$FRR_IMAGE"
 echo "  Starting leaf-3a..."
 docker rm -f leaf-3a 2>/dev/null || true
@@ -89,7 +149,10 @@ docker run -d \
     --privileged \
     --hostname leaf-3a \
     --label netwatch=frr \
+    $LOKI_DRIVER_ARGS \
+    ${LOKI_DRIVER_ARGS:+--log-opt loki-external-labels=container=leaf-3a} \
     -v "$PROJECT_ROOT/generated/frr/leaf-3a:/etc/frr" \
+    -v "$FRR_EXPORTER_BIN:/usr/local/bin/frr_exporter:ro" \
     "$FRR_IMAGE"
 echo "  Starting leaf-3b..."
 docker rm -f leaf-3b 2>/dev/null || true
@@ -99,7 +162,10 @@ docker run -d \
     --privileged \
     --hostname leaf-3b \
     --label netwatch=frr \
+    $LOKI_DRIVER_ARGS \
+    ${LOKI_DRIVER_ARGS:+--log-opt loki-external-labels=container=leaf-3b} \
     -v "$PROJECT_ROOT/generated/frr/leaf-3b:/etc/frr" \
+    -v "$FRR_EXPORTER_BIN:/usr/local/bin/frr_exporter:ro" \
     "$FRR_IMAGE"
 echo "  Starting leaf-4a..."
 docker rm -f leaf-4a 2>/dev/null || true
@@ -109,7 +175,10 @@ docker run -d \
     --privileged \
     --hostname leaf-4a \
     --label netwatch=frr \
+    $LOKI_DRIVER_ARGS \
+    ${LOKI_DRIVER_ARGS:+--log-opt loki-external-labels=container=leaf-4a} \
     -v "$PROJECT_ROOT/generated/frr/leaf-4a:/etc/frr" \
+    -v "$FRR_EXPORTER_BIN:/usr/local/bin/frr_exporter:ro" \
     "$FRR_IMAGE"
 echo "  Starting leaf-4b..."
 docker rm -f leaf-4b 2>/dev/null || true
@@ -119,7 +188,10 @@ docker run -d \
     --privileged \
     --hostname leaf-4b \
     --label netwatch=frr \
+    $LOKI_DRIVER_ARGS \
+    ${LOKI_DRIVER_ARGS:+--log-opt loki-external-labels=container=leaf-4b} \
     -v "$PROJECT_ROOT/generated/frr/leaf-4b:/etc/frr" \
+    -v "$FRR_EXPORTER_BIN:/usr/local/bin/frr_exporter:ro" \
     "$FRR_IMAGE"
 echo "  Starting spine-1..."
 docker rm -f spine-1 2>/dev/null || true
@@ -129,7 +201,10 @@ docker run -d \
     --privileged \
     --hostname spine-1 \
     --label netwatch=frr \
+    $LOKI_DRIVER_ARGS \
+    ${LOKI_DRIVER_ARGS:+--log-opt loki-external-labels=container=spine-1} \
     -v "$PROJECT_ROOT/generated/frr/spine-1:/etc/frr" \
+    -v "$FRR_EXPORTER_BIN:/usr/local/bin/frr_exporter:ro" \
     "$FRR_IMAGE"
 echo "  Starting spine-2..."
 docker rm -f spine-2 2>/dev/null || true
@@ -139,7 +214,10 @@ docker run -d \
     --privileged \
     --hostname spine-2 \
     --label netwatch=frr \
+    $LOKI_DRIVER_ARGS \
+    ${LOKI_DRIVER_ARGS:+--log-opt loki-external-labels=container=spine-2} \
     -v "$PROJECT_ROOT/generated/frr/spine-2:/etc/frr" \
+    -v "$FRR_EXPORTER_BIN:/usr/local/bin/frr_exporter:ro" \
     "$FRR_IMAGE"
 
 echo ""
@@ -189,7 +267,7 @@ wire_mgmt() {
 
     ip link add "$host_veth" type veth peer name "eth-mgmt" 2>/dev/null || true
     ip link set "eth-mgmt" netns "$pid"
-    ip link set "$host_veth" master virbr2
+    ip link set "$host_veth" master "$MGMT_BRIDGE"
     ip link set "$host_veth" up
 
     nsenter -t "$pid" -n ip link set "eth-mgmt" address "$mac"
@@ -347,29 +425,29 @@ echo ""
 echo "NetWatch: Connecting containers to management network..."
 
 # --- Management network ---
-echo "  border-1 → virbr2 (192.168.0.10)"
+echo "  border-1 -> $MGMT_BRIDGE (192.168.0.10)"
 wire_mgmt "border-1" "192.168.0.10" "02:4E:57:01:00:01"
-echo "  border-2 → virbr2 (192.168.0.11)"
+echo "  border-2 -> $MGMT_BRIDGE (192.168.0.11)"
 wire_mgmt "border-2" "192.168.0.11" "02:4E:57:01:00:02"
-echo "  leaf-1a → virbr2 (192.168.0.30)"
+echo "  leaf-1a -> $MGMT_BRIDGE (192.168.0.30)"
 wire_mgmt "leaf-1a" "192.168.0.30" "02:4E:57:03:00:01"
-echo "  leaf-1b → virbr2 (192.168.0.31)"
+echo "  leaf-1b -> $MGMT_BRIDGE (192.168.0.31)"
 wire_mgmt "leaf-1b" "192.168.0.31" "02:4E:57:03:00:02"
-echo "  leaf-2a → virbr2 (192.168.0.32)"
+echo "  leaf-2a -> $MGMT_BRIDGE (192.168.0.32)"
 wire_mgmt "leaf-2a" "192.168.0.32" "02:4E:57:03:00:03"
-echo "  leaf-2b → virbr2 (192.168.0.33)"
+echo "  leaf-2b -> $MGMT_BRIDGE (192.168.0.33)"
 wire_mgmt "leaf-2b" "192.168.0.33" "02:4E:57:03:00:04"
-echo "  leaf-3a → virbr2 (192.168.0.34)"
+echo "  leaf-3a -> $MGMT_BRIDGE (192.168.0.34)"
 wire_mgmt "leaf-3a" "192.168.0.34" "02:4E:57:03:00:05"
-echo "  leaf-3b → virbr2 (192.168.0.35)"
+echo "  leaf-3b -> $MGMT_BRIDGE (192.168.0.35)"
 wire_mgmt "leaf-3b" "192.168.0.35" "02:4E:57:03:00:06"
-echo "  leaf-4a → virbr2 (192.168.0.36)"
+echo "  leaf-4a -> $MGMT_BRIDGE (192.168.0.36)"
 wire_mgmt "leaf-4a" "192.168.0.36" "02:4E:57:03:00:07"
-echo "  leaf-4b → virbr2 (192.168.0.37)"
+echo "  leaf-4b -> $MGMT_BRIDGE (192.168.0.37)"
 wire_mgmt "leaf-4b" "192.168.0.37" "02:4E:57:03:00:08"
-echo "  spine-1 → virbr2 (192.168.0.20)"
+echo "  spine-1 -> $MGMT_BRIDGE (192.168.0.20)"
 wire_mgmt "spine-1" "192.168.0.20" "02:4E:57:02:00:01"
-echo "  spine-2 → virbr2 (192.168.0.21)"
+echo "  spine-2 -> $MGMT_BRIDGE (192.168.0.21)"
 wire_mgmt "spine-2" "192.168.0.21" "02:4E:57:02:00:02"
 
 echo ""
@@ -426,9 +504,41 @@ nsenter -t $PID_spine_2 -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
 nsenter -t $PID_spine_2 -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
 
 echo ""
+echo "NetWatch: Starting frr_exporter sidecars..."
+
+# --- frr_exporter (Prometheus metrics for FRR via vtysh) ---
+# Each container runs frr_exporter on :9342, accessible via mgmt IP
+docker exec -d border-1 /usr/local/bin/frr_exporter --web.listen-address=:9342
+echo "  border-1: frr_exporter on :9342"
+docker exec -d border-2 /usr/local/bin/frr_exporter --web.listen-address=:9342
+echo "  border-2: frr_exporter on :9342"
+docker exec -d leaf-1a /usr/local/bin/frr_exporter --web.listen-address=:9342
+echo "  leaf-1a: frr_exporter on :9342"
+docker exec -d leaf-1b /usr/local/bin/frr_exporter --web.listen-address=:9342
+echo "  leaf-1b: frr_exporter on :9342"
+docker exec -d leaf-2a /usr/local/bin/frr_exporter --web.listen-address=:9342
+echo "  leaf-2a: frr_exporter on :9342"
+docker exec -d leaf-2b /usr/local/bin/frr_exporter --web.listen-address=:9342
+echo "  leaf-2b: frr_exporter on :9342"
+docker exec -d leaf-3a /usr/local/bin/frr_exporter --web.listen-address=:9342
+echo "  leaf-3a: frr_exporter on :9342"
+docker exec -d leaf-3b /usr/local/bin/frr_exporter --web.listen-address=:9342
+echo "  leaf-3b: frr_exporter on :9342"
+docker exec -d leaf-4a /usr/local/bin/frr_exporter --web.listen-address=:9342
+echo "  leaf-4a: frr_exporter on :9342"
+docker exec -d leaf-4b /usr/local/bin/frr_exporter --web.listen-address=:9342
+echo "  leaf-4b: frr_exporter on :9342"
+docker exec -d spine-1 /usr/local/bin/frr_exporter --web.listen-address=:9342
+echo "  spine-1: frr_exporter on :9342"
+docker exec -d spine-2 /usr/local/bin/frr_exporter --web.listen-address=:9342
+echo "  spine-2: frr_exporter on :9342"
+
+echo ""
 echo "NetWatch: All 12 FRR containers running and wired."
 echo "  - Fabric interfaces: up with IPs"
-echo "  - Management interfaces: up with DHCP-ready MACs"
+echo "  - Management interfaces: up on $MGMT_BRIDGE"
 echo "  - ip_forward=1, rp_filter=2 (loose mode)"
+echo "  - frr_exporter: metrics on :9342"
+echo "  - Loki logging: $([ -n "$LOKI_DRIVER_ARGS" ] && echo 'enabled' || echo 'disabled')"
 echo ""
-echo "Next: deploy FRR configs and start routing daemons."
+echo "Verify: curl -s http://192.168.0.10:9342/metrics | head"

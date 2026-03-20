@@ -13,7 +13,7 @@ set -euo pipefail
 echo "NetWatch: Creating fabric bridges..."
 
 # --- Management bridge ---
-# Managed by libvirt (virbr2) — do NOT create or delete it here.
+# Managed by libvirt ({{ mgmt_bridge }}) — do NOT create or delete it here.
 echo "  [mgmt] {{ mgmt_bridge }} (libvirt-managed, skipping creation)"
 
 # --- Fabric bridges (STP disabled, no IP) ---

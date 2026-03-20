@@ -27,7 +27,7 @@ from jinja2 import Environment, FileSystemLoader
 # Format: 02:4E:57:TT:II:II
 #   02    = locally administered, unicast
 #   4E:57 = "NW" in ASCII
-#   TT    = tier code (01=border, 02=spine, 03=leaf, 04=server, 05=infra)
+#   TT    = tier code (01=border, 02=spine, 03=leaf, 04=server, 05=bastion, 06=mgmt)
 #   II:II = node index within tier (0001, 0002, ...)
 
 TIER_CODES = {
@@ -36,7 +36,7 @@ TIER_CODES = {
     "leaf": 0x03,
     "server": 0x04,
     "bastion": 0x05,
-    "mgmt": 0x05,
+    "mgmt": 0x06,
 }
 
 

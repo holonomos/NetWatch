@@ -6,7 +6,8 @@
 # then configures IPs and ECMP default routes inside the VMs.
 #
 # Prerequisites: VMs running (vagrant up), fabric bridges exist (setup-bridges.sh).
-# Run as root: sudo ./setup-server-links.sh
+# Run as your user (NOT sudo): bash scripts/fabric/setup-server-links.sh
+# (uses sudo internally for virsh commands only)
 
 set -euo pipefail
 
@@ -22,12 +23,12 @@ attach_nic() {
     local mac="$3"
     local domain="${VIRSH_PREFIX}_${vm}"
 
-    if virsh domiflist "$domain" 2>/dev/null | grep -q "$mac"; then
+    if sudo virsh domiflist "$domain" 2>/dev/null | grep -q "$mac"; then
         echo "    $bridge ($mac): already attached"
         return 0
     fi
 
-    virsh attach-interface "$domain" \
+    sudo virsh attach-interface "$domain" \
         --type bridge \
         --source "$bridge" \
         --model virtio \
@@ -50,6 +51,10 @@ configure_vm() {
     local prefix="$9"
 
     local key="$PROJECT_ROOT/.vagrant/machines/${vm}/libvirt/private_key"
+    if [ ! -f "$key" ]; then
+        echo "  ERROR: SSH key not found at $key — is the VM up? (vagrant up $vm)"
+        return 1
+    fi
     local ssh_opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 
     ssh $ssh_opts -i "$key" vagrant@"$mgmt_ip" bash <<REMOTESCRIPT

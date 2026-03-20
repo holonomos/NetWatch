@@ -32,13 +32,10 @@
       `docker pull quay.io/frrouting/frr:9.1.0`
       `docker run --rm quay.io/frrouting/frr:9.1.0 vtysh -c "show version"`
 
-- [ ] **0.06** Verify FRR Prometheus exporter availability
-      ```
-      docker run --rm -d --name frr-test quay.io/frrouting/frr:9.1.0
-      docker exec frr-test wget -qO- http://localhost:9101/metrics
-      docker stop frr-test
-      ```
-      If no exporter: try `quay.io/frrouting/frr:10.0.0` or plan custom image.
+- [x] **0.06** FRR Prometheus exporter: RESOLVED
+      FRR 9.1.0 image has no native exporter. Using frr_exporter sidecar
+      (tynovsky/frr_exporter) on port 9342, started inside each container
+      via `docker exec -d`. Binary mounted read-only at container creation.
 
 - [ ] **0.07** Verify Python environment
       `python3 --version` → 3.10+
@@ -369,7 +366,7 @@ End-to-end server-to-server ping across fabric. All loopbacks reachable.
       print(f'{up}/30 targets up')"`
 
 - [ ] **5.05** Debug any targets not scraping
-      (Common: firewall on VM blocking 9100, FRR exporter not running on 9101)
+      (Common: firewall on VM blocking 9100, frr_exporter not running on 9342)
 
 ### Deploy node_exporter on VMs
 

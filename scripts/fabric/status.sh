@@ -10,6 +10,12 @@
 
 set -uo pipefail
 
+# Resolve management bridge dynamically
+MGMT_BRIDGE=$(virsh net-info netwatch-mgmt 2>/dev/null | awk '/Bridge:/{print $2}')
+if [ -z "$MGMT_BRIDGE" ]; then
+    MGMT_BRIDGE="virbr2"
+fi
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
@@ -224,7 +230,7 @@ TOTAL=$((TOTAL + 1))
 
 echo ""
 echo "Management Bridge:"
-check "ip link show virbr2" "virbr2"
+check "ip link show $MGMT_BRIDGE" "$MGMT_BRIDGE"
 
 echo ""
 

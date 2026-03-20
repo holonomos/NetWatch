@@ -118,7 +118,7 @@ Observability accounts for this with dual Grafana dashboards. The Lab View shows
 
 All running on the mgmt VM (192.168.0.3).
 
-**Prometheus (port 9090).** Pull-based metrics collection. Scrapes targets every 15 seconds. For the 18 VMs, it scrapes node_exporter on port 9100 (standard host metrics — CPU, memory, disk, network interfaces). For the 12 FRR containers, it scrapes FRR's native Prometheus exporter on port 9101 (BGP session states, route counts, BFD session status, EVPN route types). This distinction matters because node_exporter inside a container that shares the host kernel would report host-level metrics, not container-specific metrics. FRR's built-in exporter reports the routing daemon metrics that the dashboards actually need.
+**Prometheus (port 9090).** Pull-based metrics collection. Scrapes targets every 15 seconds. For the 18 VMs, it scrapes node_exporter on port 9100 (standard host metrics — CPU, memory, disk, network interfaces). For the 12 FRR containers, it scrapes frr_exporter (tynovsky/frr_exporter) on port 9342 (BGP session states, route counts, BFD session status, EVPN route types). The frr_exporter runs inside each container, connects to FRR via vtysh, and exposes Prometheus-format metrics. FRR 9.1.0's official image does not include a native Prometheus exporter.
 
 **Grafana (port 3000).** Visualization. Six dashboards: Fabric Overview (node and link health), BGP Status (session states, route counts, peer uptime), Node Detail (per-node CPU/memory/network), Interface Counters (bytes/packets per interface), Chaos Events (annotated timeline of injected faults), and EVPN/VxLAN (overlay route distribution). Each dashboard has Lab View and Production View variants.
 

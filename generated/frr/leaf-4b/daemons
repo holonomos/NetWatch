@@ -28,12 +28,10 @@ pathd=no
 zebra=yes
 staticd=yes
 
-#
-# Logging
-#
-# log_file=/var/log/frr/frr.log
+vtysh_enable=yes
 
-#
-# Prometheus metrics (FRR HTTP API)
-#
-# frr_prometheus=yes
+# VTY binds to all interfaces (accessible from mgmt network for frr_exporter)
+zebra_options="  -A 0.0.0.0 -s 90000000"
+bgpd_options="   -A 0.0.0.0"
+bfdd_options="   -A 0.0.0.0"
+staticd_options="-A 0.0.0.0"

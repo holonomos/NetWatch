@@ -2,71 +2,74 @@
 # Generated from topology.yml — DO NOT HAND-EDIT
 #
 # Scrape targets:
-#   - 12 FRR containers on port 9101 (FRR native exporter)
+#   - 12 FRR containers on port 9342 (frr_exporter sidecar)
 #   - 18 VMs on port 9100 (node_exporter)
 
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+rule_files:
+  - /etc/prometheus/alerts.yml
+
 scrape_configs:
 
-  # --- FRR routing containers (native Prometheus exporter) ---
+  # --- FRR routing containers (frr_exporter sidecar) ---
   - job_name: 'frr'
     static_configs:
-      - targets: ['192.168.0.10:9101']
+      - targets: ['192.168.0.10:9342']
         labels:
           instance: 'border-1'
           role: 'border'
-      - targets: ['192.168.0.11:9101']
+      - targets: ['192.168.0.11:9342']
         labels:
           instance: 'border-2'
           role: 'border'
-      - targets: ['192.168.0.30:9101']
+      - targets: ['192.168.0.30:9342']
         labels:
           instance: 'leaf-1a'
           role: 'leaf'
           rack: 'rack-1'
-      - targets: ['192.168.0.31:9101']
+      - targets: ['192.168.0.31:9342']
         labels:
           instance: 'leaf-1b'
           role: 'leaf'
           rack: 'rack-1'
-      - targets: ['192.168.0.32:9101']
+      - targets: ['192.168.0.32:9342']
         labels:
           instance: 'leaf-2a'
           role: 'leaf'
           rack: 'rack-2'
-      - targets: ['192.168.0.33:9101']
+      - targets: ['192.168.0.33:9342']
         labels:
           instance: 'leaf-2b'
           role: 'leaf'
           rack: 'rack-2'
-      - targets: ['192.168.0.34:9101']
+      - targets: ['192.168.0.34:9342']
         labels:
           instance: 'leaf-3a'
           role: 'leaf'
           rack: 'rack-3'
-      - targets: ['192.168.0.35:9101']
+      - targets: ['192.168.0.35:9342']
         labels:
           instance: 'leaf-3b'
           role: 'leaf'
           rack: 'rack-3'
-      - targets: ['192.168.0.36:9101']
+      - targets: ['192.168.0.36:9342']
         labels:
           instance: 'leaf-4a'
           role: 'leaf'
           rack: 'rack-4'
-      - targets: ['192.168.0.37:9101']
+      - targets: ['192.168.0.37:9342']
         labels:
           instance: 'leaf-4b'
           role: 'leaf'
           rack: 'rack-4'
-      - targets: ['192.168.0.20:9101']
+      - targets: ['192.168.0.20:9342']
         labels:
           instance: 'spine-1'
           role: 'spine'
-      - targets: ['192.168.0.21:9101']
+      - targets: ['192.168.0.21:9342']
         labels:
           instance: 'spine-2'
           role: 'spine'

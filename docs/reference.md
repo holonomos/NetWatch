@@ -21,20 +21,20 @@ Replicated nginx holds >99% availability over 10-min chaos run, <3s max outage.
 
 | Node | Role | ASN | Loopback | Mgmt IP | Metrics |
 |------|------|-----|----------|---------|---------|
-| border-1 | border | 65000 | 10.0.1.1/32 | 192.168.0.10 | :9101 |
-| border-2 | border | 65000 | 10.0.1.2/32 | 192.168.0.11 | :9101 |
-| spine-1 | spine | 65001 | 10.0.2.1/32 | 192.168.0.20 | :9101 |
-| spine-2 | spine | 65001 | 10.0.2.2/32 | 192.168.0.21 | :9101 |
-| leaf-1a | leaf | 65101 | 10.0.3.1/32 | 192.168.0.30 | :9101 |
-| leaf-1b | leaf | 65101 | 10.0.3.2/32 | 192.168.0.31 | :9101 |
-| leaf-2a | leaf | 65102 | 10.0.3.3/32 | 192.168.0.32 | :9101 |
-| leaf-2b | leaf | 65102 | 10.0.3.4/32 | 192.168.0.33 | :9101 |
-| leaf-3a | leaf | 65103 | 10.0.3.5/32 | 192.168.0.34 | :9101 |
-| leaf-3b | leaf | 65103 | 10.0.3.6/32 | 192.168.0.35 | :9101 |
-| leaf-4a | leaf | 65104 | 10.0.3.7/32 | 192.168.0.36 | :9101 |
-| leaf-4b | leaf | 65104 | 10.0.3.8/32 | 192.168.0.37 | :9101 |
+| border-1 | border | 65000 | 10.0.1.1/32 | 192.168.0.10 | :9342 |
+| border-2 | border | 65000 | 10.0.1.2/32 | 192.168.0.11 | :9342 |
+| spine-1 | spine | 65001 | 10.0.2.1/32 | 192.168.0.20 | :9342 |
+| spine-2 | spine | 65001 | 10.0.2.2/32 | 192.168.0.21 | :9342 |
+| leaf-1a | leaf | 65101 | 10.0.3.1/32 | 192.168.0.30 | :9342 |
+| leaf-1b | leaf | 65101 | 10.0.3.2/32 | 192.168.0.31 | :9342 |
+| leaf-2a | leaf | 65102 | 10.0.3.3/32 | 192.168.0.32 | :9342 |
+| leaf-2b | leaf | 65102 | 10.0.3.4/32 | 192.168.0.33 | :9342 |
+| leaf-3a | leaf | 65103 | 10.0.3.5/32 | 192.168.0.34 | :9342 |
+| leaf-3b | leaf | 65103 | 10.0.3.6/32 | 192.168.0.35 | :9342 |
+| leaf-4a | leaf | 65104 | 10.0.3.7/32 | 192.168.0.36 | :9342 |
+| leaf-4b | leaf | 65104 | 10.0.3.8/32 | 192.168.0.37 | :9342 |
 
-### Compute Servers — 16 Fedora KVM VMs (1 vCPU, 512 MB each)
+### Compute Servers — 16 Fedora KVM VMs (1 vCPU, 768 MB each)
 
 | Node | Rack | Mgmt IP | Dual-homed to |
 |------|------|---------|---------------|
@@ -59,8 +59,8 @@ Replicated nginx holds >99% availability over 10-min chaos run, <3s max outage.
 
 | Node | Role | Mgmt IP | vCPU | RAM | Services |
 |------|------|---------|------|-----|----------|
-| bastion | SSH jump + NAT | 192.168.0.2 | 1 | 512 MB | sshd, iptables |
-| mgmt | Observability | 192.168.0.3 | 2 | 1024 MB | Prometheus :9090, Grafana :3000, Loki :3100, dnsmasq :53, chrony :123 |
+| bastion | SSH jump + NAT | 192.168.0.2 | 1 | 384 MB | sshd, iptables |
+| mgmt | Observability | 192.168.0.3 | 2 | 2048 MB | Prometheus :9090, Grafana :3000, Loki :3100, dnsmasq :53, chrony :123 |
 
 ---
 
@@ -178,8 +178,8 @@ Data-plane metrics untouched.
 
 ### Bridge naming convention
 ```
-br-{nodeA}-{nodeB}        # fabric links
-br-mgmt                   # management
+br{index:03d}             # fabric links (br000..br051)
+virbr2                    # management (libvirt-managed)
 ```
 
 ### Key sysctls per FRR container namespace
@@ -212,7 +212,7 @@ All on mgmt VM (192.168.0.3):
 
 | Service | Port | Scrapes | Interval |
 |---------|------|---------|----------|
-| Prometheus | 9090 | 12 FRR on :9101, 18 VMs on :9100 | 15s |
+| Prometheus | 9090 | 12 FRR on :9342, 18 VMs on :9100 | 15s |
 | Grafana | 3000 | — | — |
 | Loki | 3100 | rsyslog from all 30 nodes | — |
 | dnsmasq | 53 | — | — |
@@ -229,7 +229,7 @@ All on mgmt VM (192.168.0.3):
 Each dashboard has Lab View and Production View variants.
 
 ### Metrics ports
-- FRR containers → :9101 (FRR native Prometheus exporter)
+- FRR containers → :9342 (frr_exporter sidecar)
 - VMs → :9100 (node_exporter)
 
 **Note:** Verify chosen FRR Docker image includes the HTTP API / Prometheus
