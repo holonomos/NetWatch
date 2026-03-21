@@ -102,6 +102,20 @@ nameserver 127.0.0.1
 search netwatch.lab
 EOF
 
+# --- Logrotate for remote syslog -------------------------------------------
+cat > /etc/logrotate.d/netwatch-remote <<'EOF'
+/var/log/remote.log {
+    daily
+    rotate 7
+    compress
+    missingok
+    notifempty
+    postrotate
+        /usr/bin/systemctl restart rsyslog > /dev/null 2>&1 || true
+    endscript
+}
+EOF
+
 # --- Enable services (dependency order) -----------------------------------
 systemctl enable --now dnsmasq
 systemctl enable --now chronyd

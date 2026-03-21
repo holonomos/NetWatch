@@ -1,12 +1,9 @@
 #!/bin/bash
 # NetWatch — Bridge Setup
-# Generated from topology.yml — DO NOT HAND-EDIT unless you know exactly what you're doing, still don't honestly.
-# fabric bridges (52 P2P + 1 management).
-# All fabric bridges have STP disabled (L3 routing, not L2 switching) for obvious reasons. The management bridge has STP disabled as well, for simplicity.
-# Run as root, obviusly. If you do not have admin privileges, step away from the machine, now. 
-
-
-
+# Generated from topology.yml — DO NOT HAND-EDIT
+# 52 P2P fabric bridges + 1 management bridge.
+# STP disabled on all fabric bridges (L3 routing, not L2 switching).
+# Uses sudo internally for ip link commands. Run as your user.
 
 set -euo pipefail
 
@@ -19,9 +16,9 @@ echo "  [mgmt] {{ mgmt_bridge }} (libvirt-managed, skipping creation)"
 # --- Fabric bridges (STP disabled, no IP) ---
 {% for link in links %}
 echo "  [{{ link.tier }}] {{ link.bridge }} ({{ link.a_name }} <-> {{ link.b_name }})"
-ip link add {{ link.bridge }} type bridge 2>/dev/null || true
-echo 0 > /sys/class/net/{{ link.bridge }}/bridge/stp_state
-ip link set {{ link.bridge }} up
+sudo ip link add {{ link.bridge }} type bridge 2>/dev/null || true
+sudo bash -c 'echo 0 > /sys/class/net/{{ link.bridge }}/bridge/stp_state'
+sudo ip link set {{ link.bridge }} up
 {% endfor %}
 
 echo ""

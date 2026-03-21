@@ -9,7 +9,7 @@
 # Run as your user (NOT sudo): bash scripts/fabric/setup-server-links.sh
 # (uses sudo internally for virsh commands only)
 
-set -euo pipefail
+set -uo pipefail
 
 VIRSH_PREFIX="NetWatch"
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -23,12 +23,12 @@ attach_nic() {
     local mac="$3"
     local domain="${VIRSH_PREFIX}_${vm}"
 
-    if sudo virsh domiflist "$domain" 2>/dev/null | grep -q "$mac"; then
+    if virsh -c qemu:///system domiflist "$domain" 2>/dev/null | grep -q "$mac"; then
         echo "    $bridge ($mac): already attached"
         return 0
     fi
 
-    sudo virsh attach-interface "$domain" \
+    virsh -c qemu:///system attach-interface "$domain" \
         --type bridge \
         --source "$bridge" \
         --model virtio \
@@ -50,14 +50,9 @@ configure_vm() {
     local gw_b="$8"
     local prefix="$9"
 
-    local key="$PROJECT_ROOT/.vagrant/machines/${vm}/libvirt/private_key"
-    if [ ! -f "$key" ]; then
-        echo "  ERROR: SSH key not found at $key — is the VM up? (vagrant up $vm)"
-        return 1
-    fi
-    local ssh_opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
-
-    ssh $ssh_opts -i "$key" vagrant@"$mgmt_ip" bash <<REMOTESCRIPT
+    # Use vagrant ssh-config to get the correct key and port
+    cd "$PROJECT_ROOT"
+    vagrant ssh "$vm" -c "sudo bash -s" <<REMOTESCRIPT
 set -e
 
 # Find interface by MAC address (compare lowercase)

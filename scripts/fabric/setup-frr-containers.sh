@@ -12,7 +12,7 @@
 #   7. Starts frr_exporter sidecar for Prometheus metrics
 #
 # Prerequisites: setup-bridges.sh has already run.
-# Run as root: sudo ./setup-frr-containers.sh
+# Uses sudo internally for ip/nsenter commands. Run as your user.
 
 set -euo pipefail
 
@@ -241,17 +241,17 @@ wire_link() {
     local host_veth="h-${bridge}-${container:0:6}"
 
     # Create veth pair
-    ip link add "$host_veth" type veth peer name "$ifname" 2>/dev/null || true
+    sudo ip link add "$host_veth" type veth peer name "$ifname" 2>/dev/null || true
 
     # Move container-side end into namespace
-    ip link set "$ifname" netns "$pid"
+    sudo ip link set "$ifname" netns "$pid"
 
     # Attach host-side end to bridge
-    ip link set "$host_veth" master "$bridge"
-    ip link set "$host_veth" up
+    sudo ip link set "$host_veth" master "$bridge"
+    sudo ip link set "$host_veth" up
 
     # Bring up the interface — FRR assigns IPs from frr.conf
-    nsenter -t "$pid" -n ip link set "$ifname" up
+    sudo sudo nsenter -t "$pid" -n ip link set "$ifname" up
 }
 
 # Helper: connect container to management bridge
@@ -265,14 +265,14 @@ wire_mgmt() {
 
     local host_veth="h-mgmt-${container:0:8}"
 
-    ip link add "$host_veth" type veth peer name "eth-mgmt" 2>/dev/null || true
-    ip link set "eth-mgmt" netns "$pid"
-    ip link set "$host_veth" master "$MGMT_BRIDGE"
-    ip link set "$host_veth" up
+    sudo ip link add "$host_veth" type veth peer name "eth-mgmt" 2>/dev/null || true
+    sudo ip link set "eth-mgmt" netns "$pid"
+    sudo ip link set "$host_veth" master "$MGMT_BRIDGE"
+    sudo ip link set "$host_veth" up
 
-    nsenter -t "$pid" -n ip link set "eth-mgmt" address "$mac"
-    nsenter -t "$pid" -n ip addr add "${mgmt_ip}/24" dev "eth-mgmt"
-    nsenter -t "$pid" -n ip link set "eth-mgmt" up
+    sudo sudo nsenter -t "$pid" -n ip link set "eth-mgmt" address "$mac"
+    sudo sudo nsenter -t "$pid" -n ip addr add "${mgmt_ip}/24" dev "eth-mgmt"
+    sudo sudo nsenter -t "$pid" -n ip link set "eth-mgmt" up
 }
 
 # --- Wire fabric links ---
@@ -455,53 +455,53 @@ echo "NetWatch: Applying sysctls..."
 
 # --- Sysctls (ip_forward + rp_filter) ---
 PID_border_1=$(get_pid "border-1")
-nsenter -t $PID_border_1 -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
-nsenter -t $PID_border_1 -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
-nsenter -t $PID_border_1 -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_border_1 -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
+sudo nsenter -t $PID_border_1 -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_border_1 -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
 PID_border_2=$(get_pid "border-2")
-nsenter -t $PID_border_2 -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
-nsenter -t $PID_border_2 -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
-nsenter -t $PID_border_2 -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_border_2 -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
+sudo nsenter -t $PID_border_2 -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_border_2 -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
 PID_leaf_1a=$(get_pid "leaf-1a")
-nsenter -t $PID_leaf_1a -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
-nsenter -t $PID_leaf_1a -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
-nsenter -t $PID_leaf_1a -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_leaf_1a -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
+sudo nsenter -t $PID_leaf_1a -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_leaf_1a -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
 PID_leaf_1b=$(get_pid "leaf-1b")
-nsenter -t $PID_leaf_1b -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
-nsenter -t $PID_leaf_1b -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
-nsenter -t $PID_leaf_1b -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_leaf_1b -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
+sudo nsenter -t $PID_leaf_1b -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_leaf_1b -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
 PID_leaf_2a=$(get_pid "leaf-2a")
-nsenter -t $PID_leaf_2a -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
-nsenter -t $PID_leaf_2a -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
-nsenter -t $PID_leaf_2a -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_leaf_2a -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
+sudo nsenter -t $PID_leaf_2a -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_leaf_2a -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
 PID_leaf_2b=$(get_pid "leaf-2b")
-nsenter -t $PID_leaf_2b -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
-nsenter -t $PID_leaf_2b -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
-nsenter -t $PID_leaf_2b -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_leaf_2b -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
+sudo nsenter -t $PID_leaf_2b -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_leaf_2b -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
 PID_leaf_3a=$(get_pid "leaf-3a")
-nsenter -t $PID_leaf_3a -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
-nsenter -t $PID_leaf_3a -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
-nsenter -t $PID_leaf_3a -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_leaf_3a -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
+sudo nsenter -t $PID_leaf_3a -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_leaf_3a -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
 PID_leaf_3b=$(get_pid "leaf-3b")
-nsenter -t $PID_leaf_3b -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
-nsenter -t $PID_leaf_3b -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
-nsenter -t $PID_leaf_3b -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_leaf_3b -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
+sudo nsenter -t $PID_leaf_3b -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_leaf_3b -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
 PID_leaf_4a=$(get_pid "leaf-4a")
-nsenter -t $PID_leaf_4a -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
-nsenter -t $PID_leaf_4a -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
-nsenter -t $PID_leaf_4a -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_leaf_4a -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
+sudo nsenter -t $PID_leaf_4a -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_leaf_4a -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
 PID_leaf_4b=$(get_pid "leaf-4b")
-nsenter -t $PID_leaf_4b -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
-nsenter -t $PID_leaf_4b -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
-nsenter -t $PID_leaf_4b -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_leaf_4b -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
+sudo nsenter -t $PID_leaf_4b -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_leaf_4b -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
 PID_spine_1=$(get_pid "spine-1")
-nsenter -t $PID_spine_1 -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
-nsenter -t $PID_spine_1 -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
-nsenter -t $PID_spine_1 -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_spine_1 -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
+sudo nsenter -t $PID_spine_1 -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_spine_1 -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
 PID_spine_2=$(get_pid "spine-2")
-nsenter -t $PID_spine_2 -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
-nsenter -t $PID_spine_2 -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
-nsenter -t $PID_spine_2 -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_spine_2 -n sysctl -w net.ipv4.ip_forward=1 >/dev/null
+sudo nsenter -t $PID_spine_2 -n sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
+sudo nsenter -t $PID_spine_2 -n sysctl -w net.ipv4.conf.default.rp_filter=2 >/dev/null
 
 echo ""
 echo "NetWatch: Starting frr_exporter sidecars..."
