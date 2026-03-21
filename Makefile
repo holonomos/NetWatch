@@ -3,8 +3,8 @@
 # --- Full lifecycle ---
 up: bridges fabric wire         ## Bring up fabric (bridges + FRR + server wiring)
 down: teardown                  ## Tear down fabric (keeps VMs)
-clean: teardown                 ## Alias for down
-	vagrant destroy -f
+nuke:                           ## Nuclear teardown — containers, bridges, veths, detach all fabric NICs
+	bash scripts/nuke.sh
 
 # --- Individual steps ---
 bridges:                        ## Create 52 fabric bridges
@@ -38,6 +38,28 @@ vms-destroy:                    ## Destroy all VMs
 # --- Observability access ---
 dashboard:                      ## SSH tunnel to Grafana/Prometheus/Loki
 	vagrant ssh mgmt -- -L 3000:localhost:3000 -L 9090:localhost:9090 -L 3100:localhost:3100
+
+# --- Chaos ---
+chaos-link-down:                ## Chaos: link down (ARGS="spine-1 leaf-1a")
+	bash scripts/chaos/link-down.sh $(ARGS)
+
+chaos-link-up:                  ## Chaos: link restore (ARGS="spine-1 leaf-1a")
+	bash scripts/chaos/link-down.sh $(ARGS) --restore
+
+chaos-flap:                     ## Chaos: link flap (ARGS="spine-1 leaf-1a --interval 5 --count 5")
+	bash scripts/chaos/link-flap.sh $(ARGS)
+
+chaos-latency:                  ## Chaos: inject latency (ARGS="spine-1 leaf-1a --delay 200ms")
+	bash scripts/chaos/latency-inject.sh $(ARGS)
+
+chaos-loss:                     ## Chaos: inject packet loss (ARGS="spine-1 leaf-1a --loss 30%")
+	bash scripts/chaos/packet-loss.sh $(ARGS)
+
+chaos-partition:                ## Chaos: isolate a rack (ARGS="rack-1")
+	bash scripts/chaos/rack-partition.sh $(ARGS)
+
+chaos-kill:                     ## Chaos: kill a node (ARGS="spine-1")
+	bash scripts/chaos/node-kill.sh $(ARGS)
 
 # --- Help ---
 help:                           ## Show this help

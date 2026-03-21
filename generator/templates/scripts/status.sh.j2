@@ -87,8 +87,59 @@ echo "BGP Sessions (from spine-1):"
 if docker inspect -f '{{"{{"}}.State.Running{{"}}"}}' spine-1 2>/dev/null | grep -q true; then
     docker exec spine-1 vtysh -c "show bgp summary" 2>/dev/null || warn "FRR not responding on spine-1"
 else
-    warn "spine-1 not running — skipping BGP check"
+    warn "spine-1 not running -- skipping BGP check"
 fi
+
+echo ""
+
+# --- North-South Path ---
+echo "North-South Path:"
+
+# Check border default route (static via bastion)
+if docker inspect -f '{{"{{"}}.State.Running{{"}}"}}' border-1 2>/dev/null | grep -q true; then
+    if docker exec border-1 vtysh -c "show ip route 0.0.0.0/0" 2>/dev/null | grep -q "static"; then
+        ok "border-1: static default route to bastion"
+        PASS=$((PASS + 1))
+    else
+        fail "border-1: no static default route"
+    fi
+else
+    warn "border-1 not running -- skipping"
+fi
+TOTAL=$((TOTAL + 1))
+
+if docker inspect -f '{{"{{"}}.State.Running{{"}}"}}' border-2 2>/dev/null | grep -q true; then
+    if docker exec border-2 vtysh -c "show ip route 0.0.0.0/0" 2>/dev/null | grep -q "static"; then
+        ok "border-2: static default route to bastion"
+        PASS=$((PASS + 1))
+    else
+        fail "border-2: no static default route"
+    fi
+else
+    warn "border-2 not running -- skipping"
+fi
+TOTAL=$((TOTAL + 1))
+
+# Check default route propagation (spine should have 0.0.0.0/0 via BGP)
+if docker inspect -f '{{"{{"}}.State.Running{{"}}"}}' spine-1 2>/dev/null | grep -q true; then
+    if docker exec spine-1 vtysh -c "show ip route 0.0.0.0/0" 2>/dev/null | grep -q "bgp"; then
+        ok "spine-1: default route via BGP from borders (ECMP)"
+        PASS=$((PASS + 1))
+    else
+        fail "spine-1: no BGP default route from borders"
+    fi
+else
+    warn "spine-1 not running -- skipping"
+fi
+TOTAL=$((TOTAL + 1))
+
+# Check bastion fabric connectivity
+{% if bastion_node and bastion_node.interfaces|length >= 2 %}
+{% set bst_if_a = bastion_node.interfaces[0] %}
+{% set bst_if_b = bastion_node.interfaces[1] %}
+check "docker exec {{ bst_if_a.peer }} ping -c1 -W2 {{ bst_if_a.ip }}" "bastion fabric IP {{ bst_if_a.ip }} (via {{ bst_if_a.peer }})"
+check "docker exec {{ bst_if_b.peer }} ping -c1 -W2 {{ bst_if_b.ip }}" "bastion fabric IP {{ bst_if_b.ip }} (via {{ bst_if_b.peer }})"
+{% endif %}
 
 echo ""
 

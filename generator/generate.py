@@ -138,7 +138,7 @@ def build_link_registry(topo: dict, nodes: dict) -> list:
     all_links = []
     link_index = 0
 
-    for tier_name in ["border_spine", "spine_leaf", "leaf_server"]:
+    for tier_name in ["border_bastion", "border_spine", "spine_leaf", "leaf_server"]:
         for link in topo["links"].get(tier_name, []):
             a_name = link["a"]
             b_name = link["b"]
@@ -229,6 +229,14 @@ def build_frr_context(node: dict, topo: dict) -> dict:
     # on sessions facing spines, so peer routes with their own ASN aren't rejected.
     needs_allowas_in = node["role"] in ("border", "leaf")
 
+    # For border nodes: collect bastion gateway IPs for static default route
+    # These are the peer_ip values on interfaces facing the bastion
+    bastion_gateways = []
+    if node["role"] == "border":
+        for iface in node["interfaces"]:
+            if iface["peer"] == "bastion":
+                bastion_gateways.append(iface["peer_ip"])
+
     return {
         "hostname": node["name"],
         "role": node["role"],
@@ -246,6 +254,8 @@ def build_frr_context(node: dict, topo: dict) -> dict:
         "bgp_holdtime": timers["bgp"]["holdtime_s"],
         # Spines need next-hop-unchanged for EVPN
         "is_spine": node["role"] == "spine",
+        # Border north-south: static default via bastion
+        "bastion_gateways": bastion_gateways,
     }
 
 
@@ -339,6 +349,16 @@ def build_bridge_context(all_links: list, nodes: dict, topo: dict) -> dict:
                 "leaf_b_mac": leaf_b_mac,
             })
 
+    # Bastion node info for north-south wiring
+    bastion_node = None
+    if "bastion" in nodes:
+        bastion = nodes["bastion"]
+        bastion_node = {
+            "name": "bastion",
+            "mgmt_ip": bastion["mgmt_ip"],
+            "interfaces": bastion.get("interfaces", []),
+        }
+
     return {
         "links": all_links,
         "mgmt_bridge": mgmt["bridge"],
@@ -346,6 +366,7 @@ def build_bridge_context(all_links: list, nodes: dict, topo: dict) -> dict:
         "mgmt_gateway": mgmt["gateway"],
         "frr_nodes": frr_nodes,
         "server_nodes": server_nodes,
+        "bastion_node": bastion_node,
     }
 
 

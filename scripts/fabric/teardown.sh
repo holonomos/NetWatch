@@ -133,6 +133,10 @@ ip link set br050 down 2>/dev/null || true
 ip link del br050 2>/dev/null && echo "    br050: removed" || true
 ip link set br051 down 2>/dev/null || true
 ip link del br051 2>/dev/null && echo "    br051: removed" || true
+ip link set br052 down 2>/dev/null || true
+ip link del br052 2>/dev/null && echo "    br052: removed" || true
+ip link set br053 down 2>/dev/null || true
+ip link del br053 2>/dev/null && echo "    br053: removed" || true
 
 # --- Management bridge ---
 # Managed by libvirt — do NOT delete it here.

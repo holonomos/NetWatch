@@ -61,9 +61,9 @@ check "docker inspect -f '{{.State.Running}}' spine-2 2>/dev/null | grep -q true
 echo ""
 
 # --- Bridges ---
-echo "Fabric Bridges (52):"
+echo "Fabric Bridges (54):"
 BRIDGE_UP=0
-BRIDGE_TOTAL=52
+BRIDGE_TOTAL=54
 if ip link show br000 >/dev/null 2>&1; then
     BRIDGE_UP=$((BRIDGE_UP + 1))
 fi
@@ -220,6 +220,12 @@ fi
 if ip link show br051 >/dev/null 2>&1; then
     BRIDGE_UP=$((BRIDGE_UP + 1))
 fi
+if ip link show br052 >/dev/null 2>&1; then
+    BRIDGE_UP=$((BRIDGE_UP + 1))
+fi
+if ip link show br053 >/dev/null 2>&1; then
+    BRIDGE_UP=$((BRIDGE_UP + 1))
+fi
 if [ "$BRIDGE_UP" -eq "$BRIDGE_TOTAL" ]; then
     ok "All $BRIDGE_TOTAL fabric bridges up"
     PASS=$((PASS + 1))
@@ -256,8 +262,55 @@ echo "BGP Sessions (from spine-1):"
 if docker inspect -f '{{.State.Running}}' spine-1 2>/dev/null | grep -q true; then
     docker exec spine-1 vtysh -c "show bgp summary" 2>/dev/null || warn "FRR not responding on spine-1"
 else
-    warn "spine-1 not running — skipping BGP check"
+    warn "spine-1 not running -- skipping BGP check"
 fi
+
+echo ""
+
+# --- North-South Path ---
+echo "North-South Path:"
+
+# Check border default route (static via bastion)
+if docker inspect -f '{{.State.Running}}' border-1 2>/dev/null | grep -q true; then
+    if docker exec border-1 vtysh -c "show ip route 0.0.0.0/0" 2>/dev/null | grep -q "static"; then
+        ok "border-1: static default route to bastion"
+        PASS=$((PASS + 1))
+    else
+        fail "border-1: no static default route"
+    fi
+else
+    warn "border-1 not running -- skipping"
+fi
+TOTAL=$((TOTAL + 1))
+
+if docker inspect -f '{{.State.Running}}' border-2 2>/dev/null | grep -q true; then
+    if docker exec border-2 vtysh -c "show ip route 0.0.0.0/0" 2>/dev/null | grep -q "static"; then
+        ok "border-2: static default route to bastion"
+        PASS=$((PASS + 1))
+    else
+        fail "border-2: no static default route"
+    fi
+else
+    warn "border-2 not running -- skipping"
+fi
+TOTAL=$((TOTAL + 1))
+
+# Check default route propagation (spine should have 0.0.0.0/0 via BGP)
+if docker inspect -f '{{.State.Running}}' spine-1 2>/dev/null | grep -q true; then
+    if docker exec spine-1 vtysh -c "show ip route 0.0.0.0/0" 2>/dev/null | grep -q "bgp"; then
+        ok "spine-1: default route via BGP from borders (ECMP)"
+        PASS=$((PASS + 1))
+    else
+        fail "spine-1: no BGP default route from borders"
+    fi
+else
+    warn "spine-1 not running -- skipping"
+fi
+TOTAL=$((TOTAL + 1))
+
+# Check bastion fabric connectivity
+check "docker exec border-1 ping -c1 -W2 172.16.0.2" "bastion fabric IP 172.16.0.2 (via border-1)"
+check "docker exec border-2 ping -c1 -W2 172.16.0.6" "bastion fabric IP 172.16.0.6 (via border-2)"
 
 echo ""
 

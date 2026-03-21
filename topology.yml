@@ -70,6 +70,7 @@ addressing:
     cidr: "172.16.0.0/16"
     description: "Point-to-point /30 subnets. Connected routes only."
     pools:
+      border_bastion: "172.16.0.0/24"
       border_spine: "172.16.1.0/24"
       spine_leaf: "172.16.2.0/24"
       leaf_server_rack1: "172.16.3.0/24"
@@ -405,10 +406,26 @@ nodes:
 #   - b_ip: lower-tier node
 #   - subnet: /30 allocation from the appropriate pool
 #
-# Total: 4 border-spine + 16 spine-leaf + 32 leaf-server = 52 links
-# BGP sessions: 4 border-spine + 16 spine-leaf = 20 sessions
+# Total: 2 border-bastion + 4 border-spine + 16 spine-leaf + 32 leaf-server = 54 links
+# BGP sessions: 4 border-spine + 16 spine-leaf = 20 sessions (border-bastion uses static routes)
 
 links:
+
+  # --- Border <-> Bastion (2 links) ----------------------------------------
+  # North-south exit path. Static routes on borders, no BGP.
+  # Bastion is a VM (NAT gateway), not an FRR container.
+  border_bastion:
+    - a: border-1
+      b: bastion
+      subnet: "172.16.0.0/30"
+      a_ip: "172.16.0.1"
+      b_ip: "172.16.0.2"
+
+    - a: border-2
+      b: bastion
+      subnet: "172.16.0.4/30"
+      a_ip: "172.16.0.5"
+      b_ip: "172.16.0.6"
 
   # --- Border <-> Spine (4 links) ------------------------------------------
   border_spine:

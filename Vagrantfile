@@ -139,10 +139,14 @@ Vagrant.configure("2") do |config|
       # NAT masquerade — dynamically find the internet-facing interface
       INET_IF=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1); exit}')
       if [ -n "$INET_IF" ]; then
+        # OOB management network
         iptables -t nat -A POSTROUTING -s 192.168.0.0/24 -o "$INET_IF" -j MASQUERADE
+        # Fabric source IPs (north-south path: server -> leaf -> spine -> border -> bastion -> internet)
+        iptables -t nat -A POSTROUTING -s 10.0.0.0/8 -o "$INET_IF" -j MASQUERADE
+        iptables -t nat -A POSTROUTING -s 172.16.0.0/12 -o "$INET_IF" -j MASQUERADE
         iptables-save > /etc/sysconfig/iptables
         systemctl enable iptables
-        echo "NAT masquerade on interface: $INET_IF"
+        echo "NAT masquerade on interface: $INET_IF (mgmt + fabric source IPs)"
       else
         echo "WARNING: No internet-facing interface found. NAT not configured."
       fi

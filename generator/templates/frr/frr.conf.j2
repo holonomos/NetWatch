@@ -19,6 +19,13 @@ interface {{ iface.name }}
  no shutdown
 !
 {% endfor %}
+{% if bastion_gateways %}
+! --- Static default route (north-south exit via bastion) ---
+{% for gw in bastion_gateways %}
+ip route 0.0.0.0/0 {{ gw }}
+{% endfor %}
+!
+{% endif %}
 ! --- BGP ---
 router bgp {{ asn }}
  bgp router-id {{ router_id }}
@@ -37,6 +44,9 @@ router bgp {{ asn }}
  ! --- IPv4 Unicast ---
  address-family ipv4 unicast
   redistribute connected
+{% if bastion_gateways %}
+  redistribute static
+{% endif %}
   maximum-paths 8
 {% for nbr in bgp_neighbors %}
   neighbor {{ nbr.ip }} activate
