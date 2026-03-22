@@ -1,7 +1,7 @@
 .PHONY: up down bridges fabric wire status teardown generate clean
 
 # --- Full lifecycle ---
-up: bridges fabric wire         ## Bring up fabric (bridges + FRR wiring + server wiring)
+up: bridges fabric evpn wire    ## Bring up fabric (bridges + FRR + EVPN overlay + server wiring)
 down: teardown                  ## Tear down fabric (keeps VMs)
 nuke:                           ## Nuclear teardown — FRR VMs, bridges, detach all fabric NICs
 	bash scripts/nuke.sh
@@ -12,6 +12,9 @@ bridges:                        ## Create 54 fabric bridges
 
 fabric:                         ## Wire FRR VMs to fabric bridges
 	bash scripts/fabric/setup-frr-links.sh
+
+evpn:                           ## Configure EVPN/VxLAN overlay on leaf VTEPs
+	bash scripts/fabric/setup-evpn.sh
 
 wire:                           ## Wire server VMs to leaf switches
 	bash scripts/fabric/setup-server-links.sh

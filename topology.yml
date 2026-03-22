@@ -64,7 +64,11 @@ asn:
 addressing:
   loopback:
     cidr: "10.0.0.0/16"
-    description: "Advertised into BGP. Used as router-ID and scrape target."
+    description: >
+      Advertised into BGP. Used as router-ID and scrape target.
+      10.0.1.x = border, 10.0.2.x = spine, 10.0.3.x = leaf,
+      10.0.4.x = rack-1 servers, 10.0.5.x = rack-2 servers,
+      10.0.6.x = rack-3 servers, 10.0.7.x = rack-4 servers.
 
   fabric:
     cidr: "172.16.0.0/16"
@@ -253,6 +257,7 @@ nodes:
       rack: rack-1
       vcpu: 1
       memory_mb: 768
+      loopback: "10.0.4.1/32"
       mgmt_ip: "192.168.0.50"
       metrics_port: 9100          # node_exporter
 
@@ -262,6 +267,7 @@ nodes:
       rack: rack-1
       vcpu: 1
       memory_mb: 768
+      loopback: "10.0.4.2/32"
       mgmt_ip: "192.168.0.51"
       metrics_port: 9100
 
@@ -271,6 +277,7 @@ nodes:
       rack: rack-1
       vcpu: 1
       memory_mb: 768
+      loopback: "10.0.4.3/32"
       mgmt_ip: "192.168.0.52"
       metrics_port: 9100
 
@@ -280,6 +287,7 @@ nodes:
       rack: rack-1
       vcpu: 1
       memory_mb: 768
+      loopback: "10.0.4.4/32"
       mgmt_ip: "192.168.0.53"
       metrics_port: 9100
 
@@ -290,6 +298,7 @@ nodes:
       rack: rack-2
       vcpu: 1
       memory_mb: 768
+      loopback: "10.0.5.1/32"
       mgmt_ip: "192.168.0.54"
       metrics_port: 9100
 
@@ -299,6 +308,7 @@ nodes:
       rack: rack-2
       vcpu: 1
       memory_mb: 768
+      loopback: "10.0.5.2/32"
       mgmt_ip: "192.168.0.55"
       metrics_port: 9100
 
@@ -308,6 +318,7 @@ nodes:
       rack: rack-2
       vcpu: 1
       memory_mb: 768
+      loopback: "10.0.5.3/32"
       mgmt_ip: "192.168.0.56"
       metrics_port: 9100
 
@@ -317,6 +328,7 @@ nodes:
       rack: rack-2
       vcpu: 1
       memory_mb: 768
+      loopback: "10.0.5.4/32"
       mgmt_ip: "192.168.0.57"
       metrics_port: 9100
 
@@ -327,6 +339,7 @@ nodes:
       rack: rack-3
       vcpu: 1
       memory_mb: 768
+      loopback: "10.0.6.1/32"
       mgmt_ip: "192.168.0.58"
       metrics_port: 9100
 
@@ -336,6 +349,7 @@ nodes:
       rack: rack-3
       vcpu: 1
       memory_mb: 768
+      loopback: "10.0.6.2/32"
       mgmt_ip: "192.168.0.59"
       metrics_port: 9100
 
@@ -345,6 +359,7 @@ nodes:
       rack: rack-3
       vcpu: 1
       memory_mb: 768
+      loopback: "10.0.6.3/32"
       mgmt_ip: "192.168.0.60"
       metrics_port: 9100
 
@@ -354,6 +369,7 @@ nodes:
       rack: rack-3
       vcpu: 1
       memory_mb: 768
+      loopback: "10.0.6.4/32"
       mgmt_ip: "192.168.0.61"
       metrics_port: 9100
 
@@ -364,6 +380,7 @@ nodes:
       rack: rack-4
       vcpu: 1
       memory_mb: 768
+      loopback: "10.0.7.1/32"
       mgmt_ip: "192.168.0.62"
       metrics_port: 9100
 
@@ -373,6 +390,7 @@ nodes:
       rack: rack-4
       vcpu: 1
       memory_mb: 768
+      loopback: "10.0.7.2/32"
       mgmt_ip: "192.168.0.63"
       metrics_port: 9100
 
@@ -382,6 +400,7 @@ nodes:
       rack: rack-4
       vcpu: 1
       memory_mb: 768
+      loopback: "10.0.7.3/32"
       mgmt_ip: "192.168.0.64"
       metrics_port: 9100
 
@@ -391,6 +410,7 @@ nodes:
       rack: rack-4
       vcpu: 1
       memory_mb: 768
+      loopback: "10.0.7.4/32"
       mgmt_ip: "192.168.0.65"
       metrics_port: 9100
 

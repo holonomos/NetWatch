@@ -62,9 +62,10 @@ configure_server() {
     local vm="$1"
     local mgmt_ip="$2"
     shift 2
-    # remaining args: mac_a ip_a gw_a mac_b ip_b gw_b prefix [--no-default-route]
+    # remaining args: mac_a ip_a gw_a mac_b ip_b gw_b prefix [--no-default-route] [loopback]
     cd "$PROJECT_ROOT"
-    vagrant ssh "$vm" -c "sudo bash -s -- $*" < "$FABRIC_SCRIPT"
+    # Run in a subshell to isolate stdin from the parent script
+    ( vagrant ssh "$vm" -c "sudo bash -s -- $*" < "$FABRIC_SCRIPT" )
 }
 
 # --- Wire each server ---
@@ -78,7 +79,7 @@ attach_nic "{{ server.name }}" "{{ if_b.bridge }}" "{{ server.leaf_b_mac }}"
 configure_server "{{ server.name }}" "{{ server.mgmt_ip }}" \
     "{{ server.leaf_a_mac }}" "{{ if_a.ip }}" "{{ if_a.peer_ip }}" \
     "{{ server.leaf_b_mac }}" "{{ if_b.ip }}" "{{ if_b.peer_ip }}" \
-    "{{ if_a.prefix_len }}"
+    "{{ if_a.prefix_len }}" "{{ server.loopback.split('/')[0] if server.loopback else '' }}"
 {% endfor %}
 
 echo ""

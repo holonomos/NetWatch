@@ -26,6 +26,13 @@ ip route 0.0.0.0/0 {{ gw }}
 {% endfor %}
 !
 {% endif %}
+{% if server_static_routes %}
+! --- Static routes to server loopbacks ---
+{% for route in server_static_routes %}
+ip route {{ route.prefix }} {{ route.nexthop }}
+{% endfor %}
+!
+{% endif %}
 ! --- BGP ---
 router bgp {{ asn }}
  bgp router-id {{ router_id }}
@@ -44,7 +51,7 @@ router bgp {{ asn }}
  ! --- IPv4 Unicast ---
  address-family ipv4 unicast
   redistribute connected
-{% if bastion_gateways %}
+{% if bastion_gateways or server_static_routes %}
   redistribute static
 {% endif %}
   maximum-paths 8

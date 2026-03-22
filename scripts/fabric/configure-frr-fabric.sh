@@ -5,22 +5,24 @@
 # Called by setup-frr-links.sh via:
 #   vagrant ssh <vm> -c "sudo bash -s -- <args>" < configure-frr-fabric.sh
 #
-# Args: loopback_ip mac1 name1 ip1 prefix1 mac2 name2 ip2 prefix2 ...
+# Args: loopback_ip mgmt_ip mac1 name1 ip1 prefix1 mac2 name2 ip2 prefix2 ...
 #
-# Variable-length: processes groups of 4 (mac, name, ip, prefix) after loopback.
-# Configures interfaces, loopback, sysctls, NM profiles, restarts FRR + frr_exporter.
+# Variable-length: processes groups of 4 (mac, name, ip, prefix) after loopback+mgmt.
+# Configures interfaces, loopback, mgmt NM profile, sysctls, NM profiles,
+# restarts FRR + frr_exporter.
 # ==========================================================================
 set -uo pipefail
 
-if [ $# -lt 5 ]; then
-    echo "Usage: $0 loopback_ip mac1 name1 ip1 prefix1 [mac2 name2 ip2 prefix2 ...]"
+if [ $# -lt 6 ]; then
+    echo "Usage: $0 loopback_ip mgmt_ip mac1 name1 ip1 prefix1 [mac2 name2 ip2 prefix2 ...]"
     exit 1
 fi
 
 LOOPBACK_IP="$1"
-shift
+MGMT_IP="$2"
+shift 2
 
-echo "  Configuring FRR fabric: loopback=$LOOPBACK_IP"
+echo "  Configuring FRR fabric: loopback=$LOOPBACK_IP mgmt=$MGMT_IP"
 
 # --- Sysctls ---
 sysctl -w net.ipv4.ip_forward=1 >/dev/null
@@ -52,6 +54,23 @@ method=manual
 address1=${LOOPBACK_IP}/32
 LOEOF
 chmod 600 /etc/NetworkManager/system-connections/fabric-lo.nmconnection
+
+# NM profile for mgmt interface (ens5) persistence
+cat > /etc/NetworkManager/system-connections/mgmt-ens5.nmconnection <<MGMTEOF
+[connection]
+id=mgmt-ens5
+type=ethernet
+interface-name=ens5
+autoconnect=true
+
+[ipv4]
+method=manual
+address1=${MGMT_IP}/24
+
+[ipv6]
+method=disabled
+MGMTEOF
+chmod 600 /etc/NetworkManager/system-connections/mgmt-ens5.nmconnection
 
 # --- Find interface by MAC address (compare lowercase) ---
 find_if_by_mac() {

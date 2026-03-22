@@ -263,7 +263,7 @@ def build_link_registry(topo: dict, nodes: dict) -> list:
 # Context builders (per template type)
 # ---------------------------------------------------------------------------
 
-def build_frr_context(node: dict, topo: dict) -> dict:
+def build_frr_context(node: dict, topo: dict, all_nodes: dict = None) -> dict:
     """Build the template context for a single FRR node's frr.conf."""
     timers = topo["timers"]
     loopback_ip = node["loopback"].split("/")[0]
@@ -275,6 +275,20 @@ def build_frr_context(node: dict, topo: dict) -> dict:
         for iface in node["interfaces"]:
             if iface["peer"] == "bastion":
                 bastion_gateways.append(iface["peer_ip"])
+
+    # For leaf nodes: build static routes to server loopbacks
+    # Each server has a loopback /32 reachable via its P2P address
+    server_static_routes = []
+    if node["role"] == "leaf" and all_nodes:
+        for iface in node["interfaces"]:
+            peer = all_nodes.get(iface["peer"])
+            if peer and peer["role"] == "server" and peer.get("loopback"):
+                # Server loopback reachable via the server's P2P IP
+                server_static_routes.append({
+                    "prefix": peer["loopback"],
+                    "nexthop": iface["peer_ip"],
+                    "server": peer["name"],
+                })
 
     return {
         "hostname": node["name"],
@@ -293,6 +307,7 @@ def build_frr_context(node: dict, topo: dict) -> dict:
         "bgp_holdtime": timers["bgp"]["holdtime_s"],
         "is_spine": node["role"] == "spine",
         "bastion_gateways": bastion_gateways,
+        "server_static_routes": server_static_routes,
     }
 
 
@@ -380,6 +395,7 @@ def build_bridge_context(all_links: list, nodes: dict, topo: dict) -> dict:
             server_nodes.append({
                 "name": name,
                 "mgmt_ip": node["mgmt_ip"],
+                "loopback": node.get("loopback", ""),
                 "interfaces": node["interfaces"],
                 "leaf_a_mac": leaf_a_mac,
                 "leaf_b_mac": leaf_b_mac,
@@ -456,7 +472,7 @@ def render_templates(topo: dict, nodes: dict, all_links: list,
         if node["type"] != "frr-vm":
             continue
 
-        ctx = build_frr_context(node, topo)
+        ctx = build_frr_context(node, topo, nodes)
         node_dir = os.path.join(out_dir, "frr", name)
         os.makedirs(node_dir, exist_ok=True)
 

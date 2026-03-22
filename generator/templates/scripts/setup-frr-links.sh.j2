@@ -59,7 +59,7 @@ configure_frr() {
     shift
     # remaining args: loopback_ip mac1 name1 ip1 prefix1 mac2 name2 ip2 prefix2 ...
     cd "$PROJECT_ROOT"
-    vagrant ssh "$vm" -c "sudo bash -s -- $*" < "$FABRIC_SCRIPT"
+    ( vagrant ssh "$vm" -c "sudo bash -s -- $*" < "$FABRIC_SCRIPT" )
 }
 
 # --- Wire each FRR node ---
@@ -71,6 +71,7 @@ attach_nic "{{ node.name }}" "{{ iface.bridge }}" "{{ iface.mac }}"
 {% endfor %}
 configure_frr "{{ node.name }}" \
     "{{ node.loopback.split('/')[0] }}" \
+    "{{ node.mgmt_ip }}" \
 {% for iface in node.interfaces %}
     "{{ iface.mac }}" "{{ iface.name }}" "{{ iface.ip }}" "{{ iface.prefix_len }}"{{ " \\" if not loop.last else "" }}
 {% endfor %}

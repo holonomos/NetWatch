@@ -116,6 +116,14 @@ cat > /etc/logrotate.d/netwatch-remote <<'EOF'
 }
 EOF
 
+# --- SSH hardening (key-only, no passwords) --------------------------------
+sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sed -i 's/^#\?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
+for f in /etc/ssh/sshd_config.d/*.conf; do
+    [ -f "$f" ] && sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' "$f"
+done
+systemctl reload sshd 2>/dev/null || systemctl restart sshd
+
 # --- Enable services (dependency order) -----------------------------------
 systemctl enable --now dnsmasq
 systemctl enable --now chronyd
