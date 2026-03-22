@@ -223,31 +223,10 @@ echo "bastion: br000 (border-1) + br001 (border-2)"
 attach_nic "bastion" "br000" "$BASTION_MAC_A"
 attach_nic "bastion" "br001" "$BASTION_MAC_B"
 
-# Configure bastion fabric interfaces (no default route — bastion keeps its own)
-configure_server "bastion" "192.168.0.2" \
-    "02:4E:57:05:01:01" "172.16.0.2" "172.16.0.1" \
-    "02:4E:57:05:01:02" "172.16.0.6" "172.16.0.5" \
-    "30" "--no-default-route"
-
-# Configure NAT masquerade for fabric source IPs on bastion
+# Configure bastion fabric interfaces + NAT (uses its own dedicated script)
+BASTION_SCRIPT="$PROJECT_ROOT/scripts/fabric/configure-bastion-fabric.sh"
 cd "$PROJECT_ROOT"
-vagrant ssh bastion -c "sudo bash -s" < <(cat <<'NATSCRIPT'
-set -e
-INET_IF=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1); exit}')
-if [ -n "$INET_IF" ]; then
-    iptables -t nat -D POSTROUTING -s 10.0.0.0/8 -o "$INET_IF" -j MASQUERADE 2>/dev/null || true
-    iptables -t nat -D POSTROUTING -s 172.16.0.0/12 -o "$INET_IF" -j MASQUERADE 2>/dev/null || true
-    iptables -t nat -A POSTROUTING -s 10.0.0.0/8 -o "$INET_IF" -j MASQUERADE
-    iptables -t nat -A POSTROUTING -s 172.16.0.0/12 -o "$INET_IF" -j MASQUERADE
-    iptables -t nat -C POSTROUTING -s 192.168.0.0/24 -o "$INET_IF" -j MASQUERADE 2>/dev/null || \
-        iptables -t nat -A POSTROUTING -s 192.168.0.0/24 -o "$INET_IF" -j MASQUERADE
-    iptables-save > /etc/sysconfig/iptables
-    echo "  NAT masquerade on $INET_IF for 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/24"
-else
-    echo "WARNING: No internet-facing interface found. NAT not configured."
-fi
-NATSCRIPT
-)
+( vagrant ssh bastion -c "sudo bash -s -- 02:4E:57:05:01:01 172.16.0.2 172.16.0.1 02:4E:57:05:01:02 172.16.0.6 172.16.0.5 30" < "$BASTION_SCRIPT" )
 
 echo ""
 echo "NetWatch: Bastion wired to fabric."

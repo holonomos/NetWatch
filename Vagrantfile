@@ -277,18 +277,6 @@ Vagrant.configure("2") do |config|
 
         # Static IP (Vagrant can't reconfigure the NIC it SSH'd in on)
         ip addr add #{mgmt_ip}/24 dev ens5 2>/dev/null || true
-
-        # Restrict SSH on mgmt interface (ens5) to host + bastion + mgmt only.
-        iptables -D INPUT -i ens5 -p tcp --dport 22 -s 192.168.0.1 -j ACCEPT 2>/dev/null || true
-        iptables -D INPUT -i ens5 -p tcp --dport 22 -s 192.168.0.2 -j ACCEPT 2>/dev/null || true
-        iptables -D INPUT -i ens5 -p tcp --dport 22 -s 192.168.0.3 -j ACCEPT 2>/dev/null || true
-        iptables -D INPUT -i ens5 -p tcp --dport 22 -j DROP 2>/dev/null || true
-        iptables -A INPUT -i ens5 -p tcp --dport 22 -s 192.168.0.1 -j ACCEPT
-        iptables -A INPUT -i ens5 -p tcp --dport 22 -s 192.168.0.2 -j ACCEPT
-        iptables -A INPUT -i ens5 -p tcp --dport 22 -s 192.168.0.3 -j ACCEPT
-        iptables -A INPUT -i ens5 -p tcp --dport 22 -j DROP
-        iptables-save > /etc/sysconfig/iptables
-        systemctl enable iptables
       SH
     end
   end
