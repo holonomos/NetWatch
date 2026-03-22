@@ -31,12 +31,13 @@ OUTPUT_BOX="$PROJECT_ROOT/netwatch-golden.box"
 # --- Source pinned versions ------------------------------------------------
 source "$PROJECT_ROOT/repo/versions.env"
 
-# --- k3s version (pin it here alongside everything else) -------------------
 K3S_VERSION="${K3S_VERSION:-v1.31.4+k3s1}"
+FRR_REPO="${FRR_REPO:-frr-stable}"
 
 echo "=== NetWatch Golden Image Builder ==="
 echo ""
 echo "  Base box:     netwatch-fedora43 (fedora_43.box)"
+echo "  FRR:          $FRR_REPO (RPM from rpm.frrouting.org)"
 echo "  k3s:          $K3S_VERSION"
 echo "  node_exporter: $NODE_EXPORTER_VERSION"
 echo "  frr_exporter:  $FRR_EXPORTER_VERSION"
@@ -183,6 +184,31 @@ echo "--- $(rpm -qa | wc -l) RPMs installed ---"
 PROVISION_RPMS
 
 # ==========================================================================
+# Phase 1b: FRR routing suite (for 12 switch VMs)
+# ==========================================================================
+echo ""
+echo "=== Phase 1b: FRR routing suite ==="
+
+vagrant ssh -c "sudo bash -s" <<PROVISION_FRR
+set -euo pipefail
+
+echo "--- Installing FRR from Fedora repos ---"
+dnf install -y frr
+
+echo "--- FRR version ---"
+rpm -q frr
+
+echo "--- Disabling FRR by default (enabled per-role at provision time) ---"
+systemctl disable frr
+
+echo "--- Ensuring /etc/frr directory ---"
+mkdir -p /etc/frr
+chown -R frr:frr /etc/frr
+
+echo "--- FRR installed ---"
+PROVISION_FRR
+
+# ==========================================================================
 # Phase 2: k3s binary
 # ==========================================================================
 echo ""
@@ -324,6 +350,22 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+# --- frr_exporter (runs on FRR switch VMs, disabled by default) ---
+cat > /etc/systemd/system/frr_exporter.service <<EOF
+[Unit]
+Description=FRR Exporter for Prometheus
+After=frr.service
+Requires=frr.service
+
+[Service]
+ExecStart=/usr/local/bin/frr_exporter --web.listen-address=:9342
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 # --- Config directories (populated by Vagrantfile provisioner) ---
 mkdir -p /etc/prometheus /var/lib/prometheus
 mkdir -p /etc/loki /var/lib/loki
@@ -335,6 +377,16 @@ cat > /etc/sysctl.d/99-netwatch.conf <<EOF
 net.ipv4.conf.all.rp_filter=2
 net.ipv4.conf.default.rp_filter=2
 EOF
+
+# --- Disable services that cause noise on isolated VMs ---
+systemctl disable dnf-makecache.timer 2>/dev/null || true
+systemctl disable dnf-makecache.service 2>/dev/null || true
+systemctl disable systemd-resolved 2>/dev/null || true
+
+# --- Fix SELinux contexts BEFORE virt-sysprep runs ---
+# virt-sysprep relabels /usr/local/bin as user_tmp_t which prevents
+# systemd from executing binaries. restorecon fixes them to bin_t.
+restorecon -R /usr/local/bin
 
 systemctl daemon-reload
 echo "--- Systemd units + sysctls installed ---"
