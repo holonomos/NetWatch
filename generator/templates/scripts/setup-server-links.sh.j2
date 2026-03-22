@@ -27,7 +27,7 @@ attach_nic() {
     local mac="$3"
     local domain="${VIRSH_PREFIX}_${vm}"
 
-    if virsh -c qemu:///system domiflist "$domain" 2>/dev/null | grep -qi "$mac"; then
+    if virsh -c qemu:///system domiflist "$domain" 2>/dev/null </dev/null | grep -qi "$mac"; then
         echo "    $bridge ($mac): already attached"
     else
         virsh -c qemu:///system attach-interface "$domain" \
@@ -36,14 +36,14 @@ attach_nic() {
             --model virtio \
             --mac "$mac" \
             --live \
-            --config
+            --config </dev/null
         echo "    $bridge ($mac): attached"
         sleep 0.5
     fi
 
     # Ensure the tap device is actually on the bridge (libvirt sometimes misses this)
     local vnet
-    vnet=$(virsh -c qemu:///system domiflist "$domain" 2>/dev/null | grep -i "$mac" | head -1 | awk '{print $1}')
+    vnet=$(virsh -c qemu:///system domiflist "$domain" 2>/dev/null </dev/null | grep -i "$mac" | head -1 | awk '{print $1}')
     if [ -n "$vnet" ]; then
         local current_master
         current_master=$(ip link show "$vnet" 2>/dev/null | grep -oP 'master \K\S+' || true)

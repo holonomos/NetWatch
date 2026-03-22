@@ -3,15 +3,14 @@
 NetWatch Config Generator
 =========================
 Reads topology.yml (single source of truth) and produces all configuration
-files for the fabric: FRR configs, Prometheus scrape targets, dnsmasq
-DHCP/DNS, and Loki config.
+files for the fabric: FRR configs, udev rules, Prometheus scrape targets,
+dnsmasq DHCP/DNS, Loki config, and wiring/teardown/status scripts.
 
 Usage:
     python3 generator/generate.py [--topology topology.yml] [--outdir generated]
 """
 
 import argparse
-import ipaddress
 import os
 import sys
 from pathlib import Path
@@ -23,12 +22,17 @@ from jinja2 import Environment, FileSystemLoader
 # ---------------------------------------------------------------------------
 # MAC address generation (deterministic, locally-administered)
 # ---------------------------------------------------------------------------
-# Prefix 02:NW = locally-administered + unicast
 # Format: 02:4E:57:TT:II:II
 #   02    = locally administered, unicast
 #   4E:57 = "NW" in ASCII
-#   TT    = tier code (01=border, 02=spine, 03=leaf, 04=server, 05=bastion, 06=mgmt)
-#   II:II = node index within tier (0001, 0002, ...)
+#   TT    = tier code
+#   II:II = node index within tier (for mgmt MACs)
+#
+# Fabric interface MACs (FRR nodes):
+#   02:4E:57:TT:PP:II
+#   TT = tier code (01=border, 02=spine, 03=leaf)
+#   PP = peer index (1-based, per node)
+#   II = node index within tier (1-based)
 
 TIER_CODES = {
     "border": 0x01,
@@ -44,6 +48,23 @@ def generate_mac(role: str, index: int) -> str:
     """Generate a deterministic MAC address for a node's management interface."""
     tier = TIER_CODES.get(role, 0xFF)
     return f"02:4E:57:{tier:02X}:{(index >> 8) & 0xFF:02X}:{index & 0xFF:02X}"
+
+
+def generate_fabric_mac(role: str, node_index: int, peer_index: int) -> str:
+    """Generate a deterministic MAC for a fabric interface on an FRR node.
+
+    Scheme: 02:4E:57:TT:PP:II
+      TT = tier code (01=border, 02=spine, 03=leaf)
+      PP = peer index (1-based per node, 01..FF)
+      II = node index within tier (1-based, 01..FF)
+
+    This never collides with:
+      - Mgmt MACs (TT:II:II pattern, different byte positions)
+      - Server fabric MACs (TT=06)
+      - Bastion fabric MACs (TT=05)
+    """
+    tier = TIER_CODES.get(role, 0xFF)
+    return f"02:4E:57:{tier:02X}:{peer_index & 0xFF:02X}:{node_index & 0xFF:02X}"
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +122,7 @@ def build_node_registry(topo: dict) -> dict:
             "memory_mb": node_def.get("memory_mb"),
             "services": node_def.get("services"),
             "mac": generate_mac(role, counters[role]),
+            "role_index": counters[role],  # 1-based index within role
             "interfaces": [],       # populated by build_link_registry
             "bgp_neighbors": [],    # populated by build_link_registry
         }
@@ -130,13 +152,17 @@ def build_link_registry(topo: dict, nodes: dict) -> list:
     Parse all links from topology. For each link:
     - Create interface entries on both endpoint nodes
     - For FRR-to-FRR links, create BGP neighbor entries
+    - Generate deterministic fabric MACs for FRR node interfaces
     - Return flat list of all links for bridge creation scripts
 
-    Interface naming inside containers/VMs:
+    Interface naming inside VMs:
         eth-<peer_name>   (e.g., eth-spine-1, eth-leaf-1a)
     """
     all_links = []
     link_index = 0
+
+    # Track per-node peer index for fabric MAC generation
+    node_peer_counters = {}
 
     for tier_name in ["border_bastion", "border_spine", "spine_leaf", "leaf_server"]:
         for link in topo["links"].get(tier_name, []):
@@ -146,13 +172,32 @@ def build_link_registry(topo: dict, nodes: dict) -> list:
             a_ip = link["a_ip"]
             b_ip = link["b_ip"]
 
-            # Bridge name: br-<index>-<a>-<b> (truncated for 15-char limit)
             bridge = f"br{link_index:03d}"
             link_index += 1
 
-            # Veth names inside namespaces
             a_ifname = f"eth-{b_name}"
             b_ifname = f"eth-{a_name}"
+
+            # Generate fabric MACs for FRR node interfaces
+            a_node = nodes.get(a_name, {})
+            b_node = nodes.get(b_name, {})
+
+            a_fabric_mac = ""
+            b_fabric_mac = ""
+
+            if a_node.get("type") == "frr-vm":
+                node_peer_counters.setdefault(a_name, 0)
+                node_peer_counters[a_name] += 1
+                a_fabric_mac = generate_fabric_mac(
+                    a_node["role"], a_node["role_index"],
+                    node_peer_counters[a_name])
+
+            if b_node.get("type") == "frr-vm":
+                node_peer_counters.setdefault(b_name, 0)
+                node_peer_counters[b_name] += 1
+                b_fabric_mac = generate_fabric_mac(
+                    b_node["role"], b_node["role_index"],
+                    node_peer_counters[b_name])
 
             # Register interfaces on both nodes
             a_iface = {
@@ -163,6 +208,7 @@ def build_link_registry(topo: dict, nodes: dict) -> list:
                 "subnet": subnet,
                 "peer": b_name,
                 "bridge": bridge,
+                "mac": a_fabric_mac,
             }
             b_iface = {
                 "name": b_ifname,
@@ -172,6 +218,7 @@ def build_link_registry(topo: dict, nodes: dict) -> list:
                 "subnet": subnet,
                 "peer": a_name,
                 "bridge": bridge,
+                "mac": b_fabric_mac,
             }
 
             if a_name in nodes:
@@ -179,20 +226,15 @@ def build_link_registry(topo: dict, nodes: dict) -> list:
             if b_name in nodes:
                 nodes[b_name]["interfaces"].append(b_iface)
 
-            # BGP neighbors (only between FRR nodes, not servers)
-            a_node = nodes.get(a_name, {})
-            b_node = nodes.get(b_name, {})
-
-            if (a_node.get("type") == "frr-container" and
-                    b_node.get("type") == "frr-container"):
-                # A peers with B
+            # BGP neighbors (only between FRR nodes)
+            if (a_node.get("type") == "frr-vm" and
+                    b_node.get("type") == "frr-vm"):
                 nodes[a_name]["bgp_neighbors"].append({
                     "ip": b_ip,
                     "remote_asn": b_node["asn"],
                     "name": b_name,
                     "interface": a_ifname,
                 })
-                # B peers with A
                 nodes[b_name]["bgp_neighbors"].append({
                     "ip": a_ip,
                     "remote_asn": a_node["asn"],
@@ -208,6 +250,8 @@ def build_link_registry(topo: dict, nodes: dict) -> list:
                 "b_ip": b_ip,
                 "a_ifname": a_ifname,
                 "b_ifname": b_ifname,
+                "a_mac": a_fabric_mac,
+                "b_mac": b_fabric_mac,
                 "subnet": subnet,
                 "tier": tier_name,
             })
@@ -224,13 +268,8 @@ def build_frr_context(node: dict, topo: dict) -> dict:
     timers = topo["timers"]
     loopback_ip = node["loopback"].split("/")[0]
 
-    # Determine if this node needs allowas-in:
-    # Borders (AS 65000 shared) and leafs (ASN-per-rack shared) need it
-    # on sessions facing spines, so peer routes with their own ASN aren't rejected.
     needs_allowas_in = node["role"] in ("border", "leaf")
 
-    # For border nodes: collect bastion gateway IPs for static default route
-    # These are the peer_ip values on interfaces facing the bastion
     bastion_gateways = []
     if node["role"] == "border":
         for iface in node["interfaces"]:
@@ -252,9 +291,7 @@ def build_frr_context(node: dict, topo: dict) -> dict:
         "bfd_mult": timers["bfd"]["detect_multiplier"],
         "bgp_keepalive": timers["bgp"]["keepalive_s"],
         "bgp_holdtime": timers["bgp"]["holdtime_s"],
-        # Spines need next-hop-unchanged for EVPN
         "is_spine": node["role"] == "spine",
-        # Border north-south: static default via bastion
         "bastion_gateways": bastion_gateways,
     }
 
@@ -274,7 +311,7 @@ def build_prometheus_context(nodes: dict, topo: dict) -> dict:
             "role": node["role"],
             "rack": node.get("rack", ""),
         }
-        if node["type"] == "frr-container":
+        if node["type"] == "frr-vm":
             frr_targets.append(target)
         elif node["type"] == "fedora-vm":
             vm_targets.append(target)
@@ -319,16 +356,17 @@ def build_loki_context(topo: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def build_bridge_context(all_links: list, nodes: dict, topo: dict) -> dict:
-    """Build context for setup-bridges.sh and setup-frr-containers.sh."""
+    """Build context for setup-bridges.sh, setup-frr-links.sh, etc."""
     mgmt = topo["management"]
 
     frr_nodes = []
     for name, node in sorted(nodes.items()):
-        if node["type"] == "frr-container":
+        if node["type"] == "frr-vm":
             frr_nodes.append({
                 "name": name,
                 "mac": node["mac"],
                 "mgmt_ip": node["mgmt_ip"],
+                "loopback": node.get("loopback", ""),
                 "interfaces": node["interfaces"],
             })
 
@@ -337,8 +375,6 @@ def build_bridge_context(all_links: list, nodes: dict, topo: dict) -> dict:
     for name, node in sorted(nodes.items()):
         if node["role"] == "server":
             srv_index += 1
-            # Generate deterministic MACs for fabric NICs (leaf-a and leaf-b)
-            # Format: 02:4E:57:06:XX:01 (leaf-a), 02:4E:57:06:XX:02 (leaf-b)
             leaf_a_mac = f"02:4E:57:06:{srv_index:02X}:01"
             leaf_b_mac = f"02:4E:57:06:{srv_index:02X}:02"
             server_nodes.append({
@@ -349,7 +385,6 @@ def build_bridge_context(all_links: list, nodes: dict, topo: dict) -> dict:
                 "leaf_b_mac": leaf_b_mac,
             })
 
-    # Bastion node info for north-south wiring
     bastion_node = None
     if "bastion" in nodes:
         bastion = nodes["bastion"]
@@ -371,6 +406,34 @@ def build_bridge_context(all_links: list, nodes: dict, topo: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Udev rules generator
+# ---------------------------------------------------------------------------
+
+def generate_udev_rules(node: dict) -> str:
+    """Generate udev rules that rename interfaces by MAC address.
+
+    Each fabric interface on an FRR VM gets a rule like:
+      SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:01:01:01", NAME="eth-spine-1"
+    """
+    lines = [
+        f"# NetWatch — udev interface naming rules for {node['name']}",
+        "# Generated from topology.yml — DO NOT HAND-EDIT",
+        "# Maps deterministic MACs to FRR interface names.",
+        "",
+    ]
+    for iface in node["interfaces"]:
+        if iface.get("mac"):
+            mac_lower = iface["mac"].lower()
+            lines.append(
+                f'SUBSYSTEM=="net", ACTION=="add", '
+                f'ATTR{{address}}=="{mac_lower}", '
+                f'NAME="{iface["name"]}"'
+            )
+    lines.append("")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Rendering engine
 # ---------------------------------------------------------------------------
 
@@ -384,13 +447,13 @@ def render_templates(topo: dict, nodes: dict, all_links: list,
         lstrip_blocks=True,
     )
 
-    # --- FRR configs (per-node) ---
+    # --- FRR configs + udev rules (per-node) ---
     frr_conf_tmpl = env.get_template("frr/frr.conf.j2")
     daemons_tmpl = env.get_template("frr/daemons.j2")
     vtysh_tmpl = env.get_template("frr/vtysh.conf.j2")
 
     for name, node in sorted(nodes.items()):
-        if node["type"] != "frr-container":
+        if node["type"] != "frr-vm":
             continue
 
         ctx = build_frr_context(node, topo)
@@ -404,7 +467,12 @@ def render_templates(topo: dict, nodes: dict, all_links: list,
         with open(os.path.join(node_dir, "vtysh.conf"), "w") as f:
             f.write(vtysh_tmpl.render(ctx))
 
-    print(f"  [FRR]        12 node configs → {out_dir}/frr/")
+        # Udev rules for interface renaming
+        udev_content = generate_udev_rules(node)
+        with open(os.path.join(node_dir, "70-netwatch-fabric.rules"), "w") as f:
+            f.write(udev_content)
+
+    print(f"  [FRR]        12 node configs + udev rules -> {out_dir}/frr/")
 
     # --- Prometheus ---
     prom_tmpl = env.get_template("prometheus/prometheus.yml.j2")
@@ -413,7 +481,7 @@ def render_templates(topo: dict, nodes: dict, all_links: list,
     os.makedirs(prom_dir, exist_ok=True)
     with open(os.path.join(prom_dir, "prometheus.yml"), "w") as f:
         f.write(prom_tmpl.render(prom_ctx))
-    print(f"  [Prometheus] scrape config   → {out_dir}/prometheus/")
+    print(f"  [Prometheus] scrape config   -> {out_dir}/prometheus/")
 
     # --- dnsmasq ---
     dns_tmpl = env.get_template("dnsmasq/dnsmasq.conf.j2")
@@ -422,7 +490,7 @@ def render_templates(topo: dict, nodes: dict, all_links: list,
     os.makedirs(dns_dir, exist_ok=True)
     with open(os.path.join(dns_dir, "dnsmasq.conf"), "w") as f:
         f.write(dns_tmpl.render(dns_ctx))
-    print(f"  [dnsmasq]    DHCP/DNS config → {out_dir}/dnsmasq/")
+    print(f"  [dnsmasq]    DHCP/DNS config -> {out_dir}/dnsmasq/")
 
     # --- Loki ---
     loki_tmpl = env.get_template("loki/loki-config.yml.j2")
@@ -431,7 +499,7 @@ def render_templates(topo: dict, nodes: dict, all_links: list,
     os.makedirs(loki_dir, exist_ok=True)
     with open(os.path.join(loki_dir, "loki-config.yml"), "w") as f:
         f.write(loki_tmpl.render(loki_ctx))
-    print(f"  [Loki]       log config      → {out_dir}/loki/")
+    print(f"  [Loki]       log config      -> {out_dir}/loki/")
 
     # --- Bridge setup script ---
     bridge_tmpl = env.get_template("scripts/setup-bridges.sh.j2")
@@ -441,35 +509,35 @@ def render_templates(topo: dict, nodes: dict, all_links: list,
     with open(os.path.join(scripts_dir, "setup-bridges.sh"), "w") as f:
         f.write(bridge_tmpl.render(bridge_ctx))
     os.chmod(os.path.join(scripts_dir, "setup-bridges.sh"), 0o755)
-    print(f"  [Scripts]    setup-bridges   → scripts/fabric/")
+    print(f"  [Scripts]    setup-bridges   -> scripts/fabric/")
 
-    # --- FRR container setup script ---
-    frr_setup_tmpl = env.get_template("scripts/setup-frr-containers.sh.j2")
-    with open(os.path.join(scripts_dir, "setup-frr-containers.sh"), "w") as f:
-        f.write(frr_setup_tmpl.render(bridge_ctx))
-    os.chmod(os.path.join(scripts_dir, "setup-frr-containers.sh"), 0o755)
-    print(f"  [Scripts]    setup-frr       → scripts/fabric/")
+    # --- FRR links setup script ---
+    frr_links_tmpl = env.get_template("scripts/setup-frr-links.sh.j2")
+    with open(os.path.join(scripts_dir, "setup-frr-links.sh"), "w") as f:
+        f.write(frr_links_tmpl.render(bridge_ctx))
+    os.chmod(os.path.join(scripts_dir, "setup-frr-links.sh"), 0o755)
+    print(f"  [Scripts]    setup-frr-links -> scripts/fabric/")
 
     # --- Teardown script ---
     teardown_tmpl = env.get_template("scripts/teardown.sh.j2")
     with open(os.path.join(scripts_dir, "teardown.sh"), "w") as f:
         f.write(teardown_tmpl.render(bridge_ctx))
     os.chmod(os.path.join(scripts_dir, "teardown.sh"), 0o755)
-    print(f"  [Scripts]    teardown        → scripts/fabric/")
+    print(f"  [Scripts]    teardown        -> scripts/fabric/")
 
     # --- Status script ---
     status_tmpl = env.get_template("scripts/status.sh.j2")
     with open(os.path.join(scripts_dir, "status.sh"), "w") as f:
         f.write(status_tmpl.render(bridge_ctx))
     os.chmod(os.path.join(scripts_dir, "status.sh"), 0o755)
-    print(f"  [Scripts]    status          → scripts/fabric/")
+    print(f"  [Scripts]    status          -> scripts/fabric/")
 
     # --- Server links script ---
     server_links_tmpl = env.get_template("scripts/setup-server-links.sh.j2")
     with open(os.path.join(scripts_dir, "setup-server-links.sh"), "w") as f:
         f.write(server_links_tmpl.render(bridge_ctx))
     os.chmod(os.path.join(scripts_dir, "setup-server-links.sh"), 0o755)
-    print(f"  [Scripts]    server-links    → scripts/fabric/")
+    print(f"  [Scripts]    server-links    -> scripts/fabric/")
 
 
 # ---------------------------------------------------------------------------
@@ -484,7 +552,6 @@ def main():
                         help="Output directory")
     args = parser.parse_args()
 
-    # Resolve paths relative to project root
     project_root = Path(__file__).resolve().parent.parent
     topo_path = project_root / args.topology
     template_dir = Path(__file__).resolve().parent / "templates"
@@ -496,24 +563,20 @@ def main():
     print(f"  output:    {out_dir}")
     print()
 
-    # Load
     topo = load_topology(str(topo_path))
     print(f"Loaded topology: {topo['project']['name']} v{topo['project']['version']}")
 
-    # Build registries
     nodes = build_node_registry(topo)
     all_links = build_link_registry(topo, nodes)
 
-    # Stats
-    frr_count = sum(1 for n in nodes.values() if n["type"] == "frr-container")
+    frr_count = sum(1 for n in nodes.values() if n["type"] == "frr-vm")
     vm_count = sum(1 for n in nodes.values() if n["type"] == "fedora-vm")
     bgp_sessions = sum(len(n["bgp_neighbors"]) for n in nodes.values()) // 2
-    print(f"  {len(nodes)} nodes ({frr_count} FRR containers, {vm_count} VMs)")
+    print(f"  {len(nodes)} nodes ({frr_count} FRR VMs, {vm_count} Fedora VMs)")
     print(f"  {len(all_links)} fabric links")
     print(f"  {bgp_sessions} BGP sessions")
     print()
 
-    # Render
     print("Generating configs:")
     render_templates(topo, nodes, all_links, str(template_dir), str(out_dir))
     print()

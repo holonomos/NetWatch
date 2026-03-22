@@ -20,41 +20,30 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 echo "NetWatch: Wiring server and bastion VMs to fabric bridges..."
 
 # Helper: attach a NIC to a VM on a given bridge (idempotent)
+# Also ensures the tap device is actually a member of the bridge.
 attach_nic() {
     local vm="$1"
     local bridge="$2"
     local mac="$3"
     local domain="${VIRSH_PREFIX}_${vm}"
 
-    if virsh -c qemu:///system domiflist "$domain" 2>/dev/null | grep -qi "$mac"; then
+    if virsh -c qemu:///system domiflist "$domain" 2>/dev/null </dev/null | grep -qi "$mac"; then
         echo "    $bridge ($mac): already attached"
-        # Still ensure bridge membership (libvirt sometimes misses this)
-        local vnet
-        vnet=$(virsh -c qemu:///system domiflist "$domain" 2>/dev/null | grep -i "$mac" | head -1 | awk '{print $1}')
-        if [ -n "$vnet" ]; then
-            local current_master
-            current_master=$(ip link show "$vnet" 2>/dev/null | grep -oP 'master \K\S+' || true)
-            if [ "$current_master" != "$bridge" ]; then
-                sudo ip link set "$vnet" master "$bridge" 2>/dev/null && \
-                    echo "    $bridge ($mac): fixed bridge membership ($vnet)"
-            fi
-        fi
-        return 0
+    else
+        virsh -c qemu:///system attach-interface "$domain" \
+            --type bridge \
+            --source "$bridge" \
+            --model virtio \
+            --mac "$mac" \
+            --live \
+            --config </dev/null
+        echo "    $bridge ($mac): attached"
+        sleep 0.5
     fi
 
-    virsh -c qemu:///system attach-interface "$domain" \
-        --type bridge \
-        --source "$bridge" \
-        --model virtio \
-        --mac "$mac" \
-        --live \
-        --config
-    echo "    $bridge ($mac): attached"
-
     # Ensure the tap device is actually on the bridge (libvirt sometimes misses this)
-    sleep 0.5
     local vnet
-    vnet=$(virsh -c qemu:///system domiflist "$domain" 2>/dev/null | grep -i "$mac" | awk '{print $1}')
+    vnet=$(virsh -c qemu:///system domiflist "$domain" 2>/dev/null </dev/null | grep -i "$mac" | head -1 | awk '{print $1}')
     if [ -n "$vnet" ]; then
         local current_master
         current_master=$(ip link show "$vnet" 2>/dev/null | grep -oP 'master \K\S+' || true)

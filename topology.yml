@@ -15,7 +15,7 @@ project:
   version: "1.0"
   description: >
     30-node hyperscale data-center lab emulator built around a
-    12-node 3-tier L3 Clos routing fabric.
+    12-node 3-tier L3 Clos routing fabric. All VMs, no Docker.
 
 # ============================================================================
 # CONTROL-PLANE TIMERS
@@ -86,10 +86,11 @@ addressing:
 # ============================================================================
 # NODES
 # ============================================================================
-# 30 total: 12 FRR containers + 16 server VMs + 1 bastion VM + 1 mgmt VM
+# 30 total: 12 FRR VMs + 16 server VMs + 1 bastion VM + 1 mgmt VM
+# All VMs use the netwatch-golden box (Fedora Cloud + FRR 10.4.1). No Docker.
 #
 # Convention:
-#   - FRR containers: Alpine-based, ~40 MB each, --network=none + manual veth
+#   - FRR VMs: Fedora, 256 MB, FRR enabled at provision time, fabric NICs hot-plugged
 #   - Server VMs: Fedora Cloud, KVM/Vagrant, KSM memory deduplication
 #   - IP assignment: .1 = higher-tier endpoint, .2 = lower-tier endpoint
 
@@ -98,17 +99,21 @@ nodes:
   # --- Border routers (AS 65000) -------------------------------------------
   borders:
     - name: border-1
-      type: frr-container
+      type: frr-vm
       role: border
       asn: 65000
+      vcpu: 1
+      memory_mb: 256
       loopback: "10.0.1.1/32"
       mgmt_ip: "192.168.0.10"
-      metrics_port: 9342          # frr_exporter sidecar
+      metrics_port: 9342          # frr_exporter
 
     - name: border-2
-      type: frr-container
+      type: frr-vm
       role: border
       asn: 65000
+      vcpu: 1
+      memory_mb: 256
       loopback: "10.0.1.2/32"
       mgmt_ip: "192.168.0.11"
       metrics_port: 9342
@@ -116,17 +121,21 @@ nodes:
   # --- Spine switches (AS 65001) -------------------------------------------
   spines:
     - name: spine-1
-      type: frr-container
+      type: frr-vm
       role: spine
       asn: 65001
+      vcpu: 1
+      memory_mb: 256
       loopback: "10.0.2.1/32"
       mgmt_ip: "192.168.0.20"
       metrics_port: 9342
 
     - name: spine-2
-      type: frr-container
+      type: frr-vm
       role: spine
       asn: 65001
+      vcpu: 1
+      memory_mb: 256
       loopback: "10.0.2.2/32"
       mgmt_ip: "192.168.0.21"
       metrics_port: 9342
@@ -135,20 +144,24 @@ nodes:
   leafs:
     # Rack 1 - AS 65101
     - name: leaf-1a
-      type: frr-container
+      type: frr-vm
       role: leaf
       rack: rack-1
       asn: 65101
+      vcpu: 1
+      memory_mb: 256
       loopback: "10.0.3.1/32"
       mgmt_ip: "192.168.0.30"
       metrics_port: 9342
       evpn_vtep: true
 
     - name: leaf-1b
-      type: frr-container
+      type: frr-vm
       role: leaf
       rack: rack-1
       asn: 65101
+      vcpu: 1
+      memory_mb: 256
       loopback: "10.0.3.2/32"
       mgmt_ip: "192.168.0.31"
       metrics_port: 9342
@@ -156,20 +169,24 @@ nodes:
 
     # Rack 2 - AS 65102
     - name: leaf-2a
-      type: frr-container
+      type: frr-vm
       role: leaf
       rack: rack-2
       asn: 65102
+      vcpu: 1
+      memory_mb: 256
       loopback: "10.0.3.3/32"
       mgmt_ip: "192.168.0.32"
       metrics_port: 9342
       evpn_vtep: true
 
     - name: leaf-2b
-      type: frr-container
+      type: frr-vm
       role: leaf
       rack: rack-2
       asn: 65102
+      vcpu: 1
+      memory_mb: 256
       loopback: "10.0.3.4/32"
       mgmt_ip: "192.168.0.33"
       metrics_port: 9342
@@ -177,20 +194,24 @@ nodes:
 
     # Rack 3 - AS 65103
     - name: leaf-3a
-      type: frr-container
+      type: frr-vm
       role: leaf
       rack: rack-3
       asn: 65103
+      vcpu: 1
+      memory_mb: 256
       loopback: "10.0.3.5/32"
       mgmt_ip: "192.168.0.34"
       metrics_port: 9342
       evpn_vtep: true
 
     - name: leaf-3b
-      type: frr-container
+      type: frr-vm
       role: leaf
       rack: rack-3
       asn: 65103
+      vcpu: 1
+      memory_mb: 256
       loopback: "10.0.3.6/32"
       mgmt_ip: "192.168.0.35"
       metrics_port: 9342
@@ -198,20 +219,24 @@ nodes:
 
     # Rack 4 - AS 65104
     - name: leaf-4a
-      type: frr-container
+      type: frr-vm
       role: leaf
       rack: rack-4
       asn: 65104
+      vcpu: 1
+      memory_mb: 256
       loopback: "10.0.3.7/32"
       mgmt_ip: "192.168.0.36"
       metrics_port: 9342
       evpn_vtep: true
 
     - name: leaf-4b
-      type: frr-container
+      type: frr-vm
       role: leaf
       rack: rack-4
       asn: 65104
+      vcpu: 1
+      memory_mb: 256
       loopback: "10.0.3.8/32"
       mgmt_ip: "192.168.0.37"
       metrics_port: 9342
@@ -544,8 +569,8 @@ observability:
     port: 9090
     scrape_interval_s: 15
     targets:
-      frr_containers:
-        port: 9342              # frr_exporter sidecar
+      frr_nodes:
+        port: 9342              # frr_exporter
         nodes:
           - border-1
           - border-2

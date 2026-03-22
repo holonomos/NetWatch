@@ -1,17 +1,17 @@
 .PHONY: up down bridges fabric wire status teardown generate clean
 
 # --- Full lifecycle ---
-up: bridges fabric wire         ## Bring up fabric (bridges + FRR + server wiring)
+up: bridges fabric wire         ## Bring up fabric (bridges + FRR wiring + server wiring)
 down: teardown                  ## Tear down fabric (keeps VMs)
-nuke:                           ## Nuclear teardown — containers, bridges, veths, detach all fabric NICs
+nuke:                           ## Nuclear teardown — FRR VMs, bridges, detach all fabric NICs
 	bash scripts/nuke.sh
 
 # --- Individual steps ---
-bridges:                        ## Create 52 fabric bridges
+bridges:                        ## Create 54 fabric bridges
 	bash scripts/fabric/setup-bridges.sh
 
-fabric:                         ## Start 12 FRR containers and wire fabric
-	bash scripts/fabric/setup-frr-containers.sh
+fabric:                         ## Wire FRR VMs to fabric bridges
+	bash scripts/fabric/setup-frr-links.sh
 
 wire:                           ## Wire server VMs to leaf switches
 	bash scripts/fabric/setup-server-links.sh
@@ -19,21 +19,28 @@ wire:                           ## Wire server VMs to leaf switches
 status:                         ## Full fabric health check
 	bash scripts/fabric/status.sh
 
-teardown:                       ## Remove FRR containers + bridges
+teardown:                       ## Shut down FRR VMs + remove bridges
 	bash scripts/fabric/teardown.sh
 
 generate:                       ## Regenerate configs from topology.yml
 	python3 generator/generate.py
 
 # --- VMs ---
-vms:                            ## Boot all 18 VMs (mgmt first, then bastion, then servers)
-	vagrant up mgmt && vagrant up bastion && vagrant up
+vms:                            ## Boot all 30 VMs (mgmt, FRR switches, bastion, servers)
+	vagrant up mgmt && vagrant up border-1 border-2 spine-1 spine-2 leaf-1a leaf-1b leaf-2a leaf-2b leaf-3a leaf-3b leaf-4a leaf-4b && vagrant up bastion && vagrant up
 
 vms-halt:                       ## Stop all VMs (preserves state)
 	vagrant halt
 
 vms-destroy:                    ## Destroy all VMs
 	vagrant destroy -f
+
+# --- FRR management ---
+frr-restart:                    ## Restart FRR on all switch VMs
+	@for node in border-1 border-2 spine-1 spine-2 leaf-1a leaf-1b leaf-2a leaf-2b leaf-3a leaf-3b leaf-4a leaf-4b; do \
+		echo "Restarting FRR on $$node..."; \
+		vagrant ssh $$node -c "sudo systemctl restart frr" 2>/dev/null || echo "  $$node: failed"; \
+	done
 
 # --- Observability access ---
 dashboard:                      ## SSH tunnel to Grafana/Prometheus/Loki

@@ -3,12 +3,15 @@
 # Generated from topology.yml — DO NOT HAND-EDIT
 #
 # Shows the state of all fabric components:
-#   - FRR containers (running/stopped)
+#   - FRR VMs (running/stopped)
 #   - Bridges (up/missing)
 #   - Management network reachability
-#   - BGP session summary (if containers are running)
+#   - BGP session summary (if VMs are running)
 
 set -uo pipefail
+
+VIRSH_PREFIX="NetWatch"
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 # Resolve management bridge dynamically
 MGMT_BRIDGE=$(virsh net-info netwatch-mgmt 2>/dev/null | awk '/Bridge:/{print $2}')
@@ -43,10 +46,17 @@ echo " NetWatch Fabric Status"
 echo "========================================"
 echo ""
 
-# --- FRR Containers ---
-echo "FRR Containers (12):"
+# --- FRR VMs ---
+echo "FRR VMs (12):"
 {% for node in frr_nodes %}
-check "docker inspect -f '{{"{{"}}.State.Running{{"}}"}}' {{ node.name }} 2>/dev/null | grep -q true" "{{ node.name }}"
+TOTAL=$((TOTAL + 1))
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_{{ node.name }}" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    ok "{{ node.name }}"
+    PASS=$((PASS + 1))
+else
+    fail "{{ node.name }} ($STATE)"
+fi
 {% endfor %}
 
 echo ""
@@ -82,10 +92,12 @@ check "ping -c1 -W1 {{ node.mgmt_ip }}" "{{ node.name }} ({{ node.mgmt_ip }})"
 
 echo ""
 
-# --- BGP Summary (if spine-1 is running) ---
+# --- BGP Summary (from spine-1) ---
 echo "BGP Sessions (from spine-1):"
-if docker inspect -f '{{"{{"}}.State.Running{{"}}"}}' spine-1 2>/dev/null | grep -q true; then
-    docker exec spine-1 vtysh -c "show bgp summary" 2>/dev/null || warn "FRR not responding on spine-1"
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_spine-1" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    cd "$PROJECT_ROOT"
+    vagrant ssh spine-1 -c "sudo vtysh -c 'show bgp summary'" 2>/dev/null || warn "FRR not responding on spine-1"
 else
     warn "spine-1 not running -- skipping BGP check"
 fi
@@ -96,8 +108,10 @@ echo ""
 echo "North-South Path:"
 
 # Check border default route (static via bastion)
-if docker inspect -f '{{"{{"}}.State.Running{{"}}"}}' border-1 2>/dev/null | grep -q true; then
-    if docker exec border-1 vtysh -c "show ip route 0.0.0.0/0" 2>/dev/null | grep -q "static"; then
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_border-1" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    cd "$PROJECT_ROOT"
+    if vagrant ssh border-1 -c "sudo vtysh -c 'show ip route 0.0.0.0/0'" 2>/dev/null | grep -q "static"; then
         ok "border-1: static default route to bastion"
         PASS=$((PASS + 1))
     else
@@ -108,8 +122,10 @@ else
 fi
 TOTAL=$((TOTAL + 1))
 
-if docker inspect -f '{{"{{"}}.State.Running{{"}}"}}' border-2 2>/dev/null | grep -q true; then
-    if docker exec border-2 vtysh -c "show ip route 0.0.0.0/0" 2>/dev/null | grep -q "static"; then
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_border-2" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    cd "$PROJECT_ROOT"
+    if vagrant ssh border-2 -c "sudo vtysh -c 'show ip route 0.0.0.0/0'" 2>/dev/null | grep -q "static"; then
         ok "border-2: static default route to bastion"
         PASS=$((PASS + 1))
     else
@@ -121,8 +137,10 @@ fi
 TOTAL=$((TOTAL + 1))
 
 # Check default route propagation (spine should have 0.0.0.0/0 via BGP)
-if docker inspect -f '{{"{{"}}.State.Running{{"}}"}}' spine-1 2>/dev/null | grep -q true; then
-    if docker exec spine-1 vtysh -c "show ip route 0.0.0.0/0" 2>/dev/null | grep -q "bgp"; then
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_spine-1" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    cd "$PROJECT_ROOT"
+    if vagrant ssh spine-1 -c "sudo vtysh -c 'show ip route 0.0.0.0/0'" 2>/dev/null | grep -q "bgp"; then
         ok "spine-1: default route via BGP from borders (ECMP)"
         PASS=$((PASS + 1))
     else
@@ -137,8 +155,22 @@ TOTAL=$((TOTAL + 1))
 {% if bastion_node and bastion_node.interfaces|length >= 2 %}
 {% set bst_if_a = bastion_node.interfaces[0] %}
 {% set bst_if_b = bastion_node.interfaces[1] %}
-check "docker exec {{ bst_if_a.peer }} ping -c1 -W2 {{ bst_if_a.ip }}" "bastion fabric IP {{ bst_if_a.ip }} (via {{ bst_if_a.peer }})"
-check "docker exec {{ bst_if_b.peer }} ping -c1 -W2 {{ bst_if_b.ip }}" "bastion fabric IP {{ bst_if_b.ip }} (via {{ bst_if_b.peer }})"
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_{{ bst_if_a.peer }}" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    cd "$PROJECT_ROOT"
+    check "vagrant ssh {{ bst_if_a.peer }} -c 'ping -c1 -W2 {{ bst_if_a.ip }}'" "bastion fabric IP {{ bst_if_a.ip }} (via {{ bst_if_a.peer }})"
+else
+    warn "{{ bst_if_a.peer }} not running -- skipping bastion check"
+    TOTAL=$((TOTAL + 1))
+fi
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_{{ bst_if_b.peer }}" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    cd "$PROJECT_ROOT"
+    check "vagrant ssh {{ bst_if_b.peer }} -c 'ping -c1 -W2 {{ bst_if_b.ip }}'" "bastion fabric IP {{ bst_if_b.ip }} (via {{ bst_if_b.peer }})"
+else
+    warn "{{ bst_if_b.peer }} not running -- skipping bastion check"
+    TOTAL=$((TOTAL + 1))
+fi
 {% endif %}
 
 echo ""

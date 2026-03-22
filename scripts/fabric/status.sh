@@ -3,12 +3,15 @@
 # Generated from topology.yml — DO NOT HAND-EDIT
 #
 # Shows the state of all fabric components:
-#   - FRR containers (running/stopped)
+#   - FRR VMs (running/stopped)
 #   - Bridges (up/missing)
 #   - Management network reachability
-#   - BGP session summary (if containers are running)
+#   - BGP session summary (if VMs are running)
 
 set -uo pipefail
+
+VIRSH_PREFIX="NetWatch"
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 # Resolve management bridge dynamically
 MGMT_BRIDGE=$(virsh net-info netwatch-mgmt 2>/dev/null | awk '/Bridge:/{print $2}')
@@ -43,20 +46,104 @@ echo " NetWatch Fabric Status"
 echo "========================================"
 echo ""
 
-# --- FRR Containers ---
-echo "FRR Containers (12):"
-check "docker inspect -f '{{.State.Running}}' border-1 2>/dev/null | grep -q true" "border-1"
-check "docker inspect -f '{{.State.Running}}' border-2 2>/dev/null | grep -q true" "border-2"
-check "docker inspect -f '{{.State.Running}}' leaf-1a 2>/dev/null | grep -q true" "leaf-1a"
-check "docker inspect -f '{{.State.Running}}' leaf-1b 2>/dev/null | grep -q true" "leaf-1b"
-check "docker inspect -f '{{.State.Running}}' leaf-2a 2>/dev/null | grep -q true" "leaf-2a"
-check "docker inspect -f '{{.State.Running}}' leaf-2b 2>/dev/null | grep -q true" "leaf-2b"
-check "docker inspect -f '{{.State.Running}}' leaf-3a 2>/dev/null | grep -q true" "leaf-3a"
-check "docker inspect -f '{{.State.Running}}' leaf-3b 2>/dev/null | grep -q true" "leaf-3b"
-check "docker inspect -f '{{.State.Running}}' leaf-4a 2>/dev/null | grep -q true" "leaf-4a"
-check "docker inspect -f '{{.State.Running}}' leaf-4b 2>/dev/null | grep -q true" "leaf-4b"
-check "docker inspect -f '{{.State.Running}}' spine-1 2>/dev/null | grep -q true" "spine-1"
-check "docker inspect -f '{{.State.Running}}' spine-2 2>/dev/null | grep -q true" "spine-2"
+# --- FRR VMs ---
+echo "FRR VMs (12):"
+TOTAL=$((TOTAL + 1))
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_border-1" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    ok "border-1"
+    PASS=$((PASS + 1))
+else
+    fail "border-1 ($STATE)"
+fi
+TOTAL=$((TOTAL + 1))
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_border-2" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    ok "border-2"
+    PASS=$((PASS + 1))
+else
+    fail "border-2 ($STATE)"
+fi
+TOTAL=$((TOTAL + 1))
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_leaf-1a" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    ok "leaf-1a"
+    PASS=$((PASS + 1))
+else
+    fail "leaf-1a ($STATE)"
+fi
+TOTAL=$((TOTAL + 1))
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_leaf-1b" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    ok "leaf-1b"
+    PASS=$((PASS + 1))
+else
+    fail "leaf-1b ($STATE)"
+fi
+TOTAL=$((TOTAL + 1))
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_leaf-2a" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    ok "leaf-2a"
+    PASS=$((PASS + 1))
+else
+    fail "leaf-2a ($STATE)"
+fi
+TOTAL=$((TOTAL + 1))
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_leaf-2b" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    ok "leaf-2b"
+    PASS=$((PASS + 1))
+else
+    fail "leaf-2b ($STATE)"
+fi
+TOTAL=$((TOTAL + 1))
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_leaf-3a" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    ok "leaf-3a"
+    PASS=$((PASS + 1))
+else
+    fail "leaf-3a ($STATE)"
+fi
+TOTAL=$((TOTAL + 1))
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_leaf-3b" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    ok "leaf-3b"
+    PASS=$((PASS + 1))
+else
+    fail "leaf-3b ($STATE)"
+fi
+TOTAL=$((TOTAL + 1))
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_leaf-4a" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    ok "leaf-4a"
+    PASS=$((PASS + 1))
+else
+    fail "leaf-4a ($STATE)"
+fi
+TOTAL=$((TOTAL + 1))
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_leaf-4b" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    ok "leaf-4b"
+    PASS=$((PASS + 1))
+else
+    fail "leaf-4b ($STATE)"
+fi
+TOTAL=$((TOTAL + 1))
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_spine-1" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    ok "spine-1"
+    PASS=$((PASS + 1))
+else
+    fail "spine-1 ($STATE)"
+fi
+TOTAL=$((TOTAL + 1))
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_spine-2" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    ok "spine-2"
+    PASS=$((PASS + 1))
+else
+    fail "spine-2 ($STATE)"
+fi
 
 echo ""
 
@@ -257,10 +344,12 @@ check "ping -c1 -W1 192.168.0.21" "spine-2 (192.168.0.21)"
 
 echo ""
 
-# --- BGP Summary (if spine-1 is running) ---
+# --- BGP Summary (from spine-1) ---
 echo "BGP Sessions (from spine-1):"
-if docker inspect -f '{{.State.Running}}' spine-1 2>/dev/null | grep -q true; then
-    docker exec spine-1 vtysh -c "show bgp summary" 2>/dev/null || warn "FRR not responding on spine-1"
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_spine-1" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    cd "$PROJECT_ROOT"
+    vagrant ssh spine-1 -c "sudo vtysh -c 'show bgp summary'" 2>/dev/null || warn "FRR not responding on spine-1"
 else
     warn "spine-1 not running -- skipping BGP check"
 fi
@@ -271,8 +360,10 @@ echo ""
 echo "North-South Path:"
 
 # Check border default route (static via bastion)
-if docker inspect -f '{{.State.Running}}' border-1 2>/dev/null | grep -q true; then
-    if docker exec border-1 vtysh -c "show ip route 0.0.0.0/0" 2>/dev/null | grep -q "static"; then
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_border-1" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    cd "$PROJECT_ROOT"
+    if vagrant ssh border-1 -c "sudo vtysh -c 'show ip route 0.0.0.0/0'" 2>/dev/null | grep -q "static"; then
         ok "border-1: static default route to bastion"
         PASS=$((PASS + 1))
     else
@@ -283,8 +374,10 @@ else
 fi
 TOTAL=$((TOTAL + 1))
 
-if docker inspect -f '{{.State.Running}}' border-2 2>/dev/null | grep -q true; then
-    if docker exec border-2 vtysh -c "show ip route 0.0.0.0/0" 2>/dev/null | grep -q "static"; then
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_border-2" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    cd "$PROJECT_ROOT"
+    if vagrant ssh border-2 -c "sudo vtysh -c 'show ip route 0.0.0.0/0'" 2>/dev/null | grep -q "static"; then
         ok "border-2: static default route to bastion"
         PASS=$((PASS + 1))
     else
@@ -296,8 +389,10 @@ fi
 TOTAL=$((TOTAL + 1))
 
 # Check default route propagation (spine should have 0.0.0.0/0 via BGP)
-if docker inspect -f '{{.State.Running}}' spine-1 2>/dev/null | grep -q true; then
-    if docker exec spine-1 vtysh -c "show ip route 0.0.0.0/0" 2>/dev/null | grep -q "bgp"; then
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_spine-1" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    cd "$PROJECT_ROOT"
+    if vagrant ssh spine-1 -c "sudo vtysh -c 'show ip route 0.0.0.0/0'" 2>/dev/null | grep -q "bgp"; then
         ok "spine-1: default route via BGP from borders (ECMP)"
         PASS=$((PASS + 1))
     else
@@ -309,8 +404,22 @@ fi
 TOTAL=$((TOTAL + 1))
 
 # Check bastion fabric connectivity
-check "docker exec border-1 ping -c1 -W2 172.16.0.2" "bastion fabric IP 172.16.0.2 (via border-1)"
-check "docker exec border-2 ping -c1 -W2 172.16.0.6" "bastion fabric IP 172.16.0.6 (via border-2)"
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_border-1" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    cd "$PROJECT_ROOT"
+    check "vagrant ssh border-1 -c 'ping -c1 -W2 172.16.0.2'" "bastion fabric IP 172.16.0.2 (via border-1)"
+else
+    warn "border-1 not running -- skipping bastion check"
+    TOTAL=$((TOTAL + 1))
+fi
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_border-2" 2>/dev/null || echo "not found")
+if [ "$STATE" = "running" ]; then
+    cd "$PROJECT_ROOT"
+    check "vagrant ssh border-2 -c 'ping -c1 -W2 172.16.0.6'" "bastion fabric IP 172.16.0.6 (via border-2)"
+else
+    warn "border-2 not running -- skipping bastion check"
+    TOTAL=$((TOTAL + 1))
+fi
 
 echo ""
 

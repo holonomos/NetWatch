@@ -2,14 +2,16 @@
 # ==========================================================================
 # nuke.sh — Full fabric teardown to a clean slate
 # ==========================================================================
-# Destroys: FRR containers, fabric bridges, veths, orphaned vnet interfaces,
+# Destroys: FRR VMs (force-kill), fabric bridges, orphaned vnet/tap interfaces,
 # and detaches all fabric NICs from VMs.
 #
-# Does NOT touch VMs themselves — use vagrant halt/destroy for that.
+# Does NOT destroy server/bastion/mgmt VMs — use vagrant halt/destroy for those.
 #
 # Usage: bash scripts/nuke.sh
 # ==========================================================================
 set -uo pipefail
+
+VIRSH_PREFIX="NetWatch"
 
 echo "========================================"
 echo " NetWatch: FABRIC NUKE"
@@ -19,11 +21,19 @@ echo "========================================"
 pkill -f "virsh.*detach" 2>/dev/null || true
 pkill -f "virsh.*attach" 2>/dev/null || true
 
-# --- 2. Stop and remove ALL FRR containers ---
+# --- 2. Force-kill all FRR VMs ---
 echo ""
-echo "=== Removing FRR containers ==="
-for c in border-1 border-2 spine-1 spine-2 leaf-{1..4}{a,b}; do
-    docker rm -f "$c" 2>/dev/null && echo "  $c: removed" || true
+echo "=== Destroying FRR VMs ==="
+for node in border-1 border-2 spine-1 spine-2 leaf-{1..4}{a,b}; do
+    domain="${VIRSH_PREFIX}_${node}"
+    state=$(virsh -c qemu:///system domstate "$domain" 2>/dev/null || echo "not found")
+    if [ "$state" = "running" ]; then
+        virsh -c qemu:///system destroy "$domain" 2>/dev/null && echo "  $node: destroyed" || true
+    elif [ "$state" = "shut off" ]; then
+        echo "  $node: already shut off"
+    else
+        echo "  $node: $state"
+    fi
 done
 
 # --- 3. Detach all fabric NICs from VMs ---
@@ -54,7 +64,7 @@ for i in $(seq 0 99); do
 done
 echo "  $removed bridges removed"
 
-# --- 5. Remove orphaned veth pairs ---
+# --- 5. Remove orphaned veth/tap pairs ---
 echo ""
 echo "=== Cleaning orphaned veths ==="
 cleaned=0
@@ -69,8 +79,8 @@ echo ""
 echo "========================================"
 echo " CLEAN SLATE"
 echo "========================================"
-echo "  Containers: $(docker ps -q --filter ancestor=quay.io/frrouting/frr:9.1.0 2>/dev/null | wc -l) running"
+echo "  FRR VMs: all force-killed"
 echo "  Fabric bridges: $(ip link show type bridge 2>/dev/null | grep -c 'br[0-9]')"
 echo ""
-echo "  VMs untouched. Use 'vagrant halt' or 'vagrant destroy -f' separately."
+echo "  Server/bastion/mgmt VMs untouched. Use 'vagrant halt' or 'vagrant destroy -f' separately."
 echo "  To rebuild fabric: make up"

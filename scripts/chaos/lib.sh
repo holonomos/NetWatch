@@ -4,10 +4,10 @@
 #
 # Provides:
 #   BRIDGE_MAP[]      — associative array: "nodeA:nodeB" -> bridge name (both directions)
-#   FRR_CONTAINERS[]  — list of all 12 FRR container names
+#   FRR_NODES[]       — list of all 12 FRR VM names
 #   RACK_LEAFS[]      — associative array: "rack-N" -> "leaf-Na leaf-Nb"
 #   resolve_bridge()  — look up bridge for a node pair
-#   find_veths()      — find host-side veth interfaces on a bridge
+#   find_veths()      — find host-side veth/tap interfaces on a bridge
 #   annotate()        — POST a Grafana annotation
 #   log_chaos()       — timestamped log output
 #   require_args()    — argument count validation
@@ -16,9 +16,10 @@
 GRAFANA_URL="${GRAFANA_URL:-http://192.168.0.3:3000}"
 GRAFANA_USER="${GRAFANA_USER:-admin}"
 GRAFANA_PASS="${GRAFANA_PASS:-admin}"
+VIRSH_PREFIX="NetWatch"
 
-# --- FRR container names ---
-FRR_CONTAINERS=(
+# --- FRR VM names ---
+FRR_NODES=(
     border-1 border-2
     spine-1 spine-2
     leaf-1a leaf-1b leaf-2a leaf-2b
@@ -145,7 +146,7 @@ resolve_bridge() {
 }
 
 # find_veths BRIDGE
-# Prints all host-side veth interfaces attached to the given bridge, one per line.
+# Prints all host-side veth/tap interfaces attached to the given bridge, one per line.
 # These are the interfaces where tc netem rules should be applied.
 find_veths() {
     local bridge="$1"

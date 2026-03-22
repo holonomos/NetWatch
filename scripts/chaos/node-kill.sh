@@ -1,12 +1,12 @@
 #!/bin/bash
 # NetWatch — Chaos: Node Kill / Restore
-# Stops or starts an FRR container to simulate a complete node failure.
+# Destroys or starts an FRR VM to simulate a complete node failure.
 #
 # Usage:
-#   bash scripts/chaos/node-kill.sh <node-name>             # kill (docker stop)
-#   bash scripts/chaos/node-kill.sh <node-name> --restore   # restore (docker start)
+#   bash scripts/chaos/node-kill.sh <node-name>             # kill (virsh destroy)
+#   bash scripts/chaos/node-kill.sh <node-name> --restore   # restore (virsh start + reconfigure)
 #
-# Only supports FRR containers (12 fabric nodes).
+# Only supports FRR VMs (12 fabric nodes).
 # Does NOT support server VMs — use 'vagrant halt/up' for those.
 #
 # Examples:
@@ -19,11 +19,13 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"
 
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
 # --- Help ---
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     echo "Usage: bash $0 <node-name> [--restore]"
     echo ""
-    echo "Kills an FRR container (docker stop) or restores it (docker start)."
+    echo "Kills an FRR VM (virsh destroy) or restores it (virsh start)."
     echo ""
     echo "Valid nodes:"
     echo "  border-1, border-2"
@@ -47,65 +49,74 @@ if [[ "${2:-}" == "--restore" ]]; then
     RESTORE=true
 fi
 
-# --- Validate node is an FRR container ---
+# --- Validate node is an FRR VM ---
 VALID=false
-for container in "${FRR_CONTAINERS[@]}"; do
-    if [[ "$container" == "$NODE" ]]; then
+for vm in "${FRR_NODES[@]}"; do
+    if [[ "$vm" == "$NODE" ]]; then
         VALID=true
         break
     fi
 done
 
 if [[ "$VALID" == false ]]; then
-    log_chaos "ERROR: '${NODE}' is not a valid FRR container"
-    log_chaos "  Valid nodes: ${FRR_CONTAINERS[*]}"
+    log_chaos "ERROR: '${NODE}' is not a valid FRR VM"
+    log_chaos "  Valid nodes: ${FRR_NODES[*]}"
     log_chaos "  For server VMs, use: vagrant halt <vm-name> / vagrant up <vm-name>"
     exit 1
 fi
 
-# --- Check current state ---
-CONTAINER_STATE=$(docker inspect -f '{{.State.Status}}' "$NODE" 2>/dev/null || echo "not_found")
+DOMAIN="${VIRSH_PREFIX}_${NODE}"
 
-if [[ "$CONTAINER_STATE" == "not_found" ]]; then
-    log_chaos "ERROR: Container '${NODE}' does not exist"
-    log_chaos "  Has the fabric been started? Run: bash scripts/fabric/setup-frr-containers.sh"
+# --- Check current state ---
+VM_STATE=$(virsh -c qemu:///system domstate "$DOMAIN" 2>/dev/null || echo "not_found")
+
+if [[ "$VM_STATE" == "not_found" ]]; then
+    log_chaos "ERROR: VM '${DOMAIN}' does not exist"
+    log_chaos "  Has the fabric been started? Run: vagrant up ${NODE}"
     exit 1
 fi
 
 if [[ "$RESTORE" == true ]]; then
     # --- Restore ---
-    if [[ "$CONTAINER_STATE" == "running" ]]; then
-        log_chaos "Container '${NODE}' is already running — nothing to do"
+    if [[ "$VM_STATE" == "running" ]]; then
+        log_chaos "VM '${NODE}' is already running — nothing to do"
         exit 0
     fi
 
-    log_chaos "ACTION: Starting container '${NODE}' (docker start)"
-    docker start "$NODE"
+    log_chaos "ACTION: Starting VM '${NODE}' (virsh start)"
+    virsh -c qemu:///system start "$DOMAIN"
 
-    # Wait briefly for container to be running
-    sleep 1
-    NEW_STATE=$(docker inspect -f '{{.State.Status}}' "$NODE" 2>/dev/null || echo "unknown")
-    log_chaos "Container '${NODE}' state: ${NEW_STATE}"
+    # Wait for VM to be accessible
+    log_chaos "Waiting for VM to become accessible..."
+    for i in $(seq 1 30); do
+        if cd "$PROJECT_ROOT" && vagrant ssh "$NODE" -c "true" 2>/dev/null; then
+            break
+        fi
+        sleep 2
+    done
 
-    log_chaos "EXPECTED: FRR daemons restart inside container"
+    NEW_STATE=$(virsh -c qemu:///system domstate "$DOMAIN" 2>/dev/null || echo "unknown")
+    log_chaos "VM '${NODE}' state: ${NEW_STATE}"
+
+    log_chaos "EXPECTED: FRR daemons restart inside VM (NM profiles persist IPs)"
     log_chaos "EXPECTED: BFD sessions re-establish on all interfaces within ~3s"
     log_chaos "EXPECTED: BGP sessions reconverge within ~30s"
     log_chaos "EXPECTED: Routes readvertised; traffic resumes via this node"
 
-    annotate "RESTORE node-kill ${NODE} (docker start, was ${CONTAINER_STATE})" \
+    annotate "RESTORE node-kill ${NODE} (virsh start, was ${VM_STATE})" \
         "chaos,node-restore,${NODE}"
 else
     # --- Kill ---
-    if [[ "$CONTAINER_STATE" != "running" ]]; then
-        log_chaos "Container '${NODE}' is already stopped (state: ${CONTAINER_STATE}) — nothing to do"
+    if [[ "$VM_STATE" != "running" ]]; then
+        log_chaos "VM '${NODE}' is already stopped (state: ${VM_STATE}) — nothing to do"
         exit 0
     fi
 
-    log_chaos "ACTION: Killing container '${NODE}' (docker stop)"
-    docker stop "$NODE"
+    log_chaos "ACTION: Killing VM '${NODE}' (virsh destroy)"
+    virsh -c qemu:///system destroy "$DOMAIN"
 
-    NEW_STATE=$(docker inspect -f '{{.State.Status}}' "$NODE" 2>/dev/null || echo "unknown")
-    log_chaos "Container '${NODE}' state: ${NEW_STATE}"
+    NEW_STATE=$(virsh -c qemu:///system domstate "$DOMAIN" 2>/dev/null || echo "unknown")
+    log_chaos "VM '${NODE}' state: ${NEW_STATE}"
 
     # Describe impact based on role
     case "$NODE" in
@@ -126,7 +137,7 @@ else
             ;;
     esac
 
-    annotate "INJECT node-kill ${NODE} (docker stop, was ${CONTAINER_STATE})" \
+    annotate "INJECT node-kill ${NODE} (virsh destroy, was ${VM_STATE})" \
         "chaos,node-kill,${NODE}"
 fi
 

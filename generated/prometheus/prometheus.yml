@@ -2,8 +2,8 @@
 # Generated from topology.yml — DO NOT HAND-EDIT
 #
 # Scrape targets:
-#   - 12 FRR containers on port 9342 (frr_exporter sidecar)
-#   - 18 VMs on port 9100 (node_exporter)
+#   - 12 FRR VMs on port 9342 (frr_exporter)
+#   - 30 VMs on port 9100 (node_exporter)
 
 global:
   scrape_interval: 15s

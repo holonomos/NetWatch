@@ -2,15 +2,18 @@
 # vi: set ft=ruby :
 #
 # NetWatch — Vagrantfile
-# 18 VMs: 16 compute servers + 1 bastion + 1 mgmt
+# 30 VMs: 12 FRR switches + 16 compute servers + 1 bastion + 1 mgmt
 # Golden image: everything pre-installed, provisioning only configures.
+# No Docker. All VMs use netwatch-golden box.
 #
 # Prerequisites:
 #   1. vagrant box add --name netwatch-golden netwatch-golden.box
 #   2. python3 generator/generate.py  (generates configs in generated/)
 #
+# Boot order: mgmt -> FRR switches -> bastion -> servers
+#
 # Usage:
-#   vagrant up mgmt && vagrant up bastion && vagrant up   # recommended order
+#   vagrant up mgmt && vagrant up border-{1,2} spine-{1,2} leaf-{1..4}{a,b} && vagrant up bastion && vagrant up
 #   vagrant up srv-1-1      # bring up a single VM
 #   vagrant ssh bastion     # SSH into bastion (jump box)
 #   vagrant destroy -f      # tear down all VMs
@@ -28,10 +31,11 @@ Vagrant.configure("2") do |config|
   end
 
   # ========================================================================
-  # Common config: DNS, sysctls, node_exporter (all 18 VMs)
+  # Common config: DNS, sysctls, node_exporter (all 30 VMs)
   # ========================================================================
   COMMON_BASE = <<~SHELL
     # DNS — point at mgmt VM (dnsmasq)
+    rm -f /etc/resolv.conf
     cat > /etc/resolv.conf <<DNSEOF
     nameserver 192.168.0.3
     search netwatch.lab
@@ -55,7 +59,7 @@ Vagrant.configure("2") do |config|
   SHELL
 
   # ========================================================================
-  # Client config: chrony + rsyslog forwarding (servers + bastion only)
+  # Client config: chrony + rsyslog forwarding (servers + bastion + FRR VMs)
   # ========================================================================
   COMMON_CLIENT = <<~SHELL
     # Chrony — NTP client, sync from mgmt
@@ -73,6 +77,38 @@ Vagrant.configure("2") do |config|
     *.* @@192.168.0.3:514
     RSEOF
     systemctl enable --now rsyslog
+  SHELL
+
+  # ========================================================================
+  # FRR switch config: copy FRR configs, udev rules, enable FRR + frr_exporter
+  # ========================================================================
+  FRR_COMMON = <<~SHELL
+    # Copy FRR configs from synced folder to /etc/frr/
+    if [ -d /tmp/netwatch-config/frr ]; then
+      cp -f /tmp/netwatch-config/frr/frr.conf /etc/frr/frr.conf
+      cp -f /tmp/netwatch-config/frr/daemons /etc/frr/daemons
+      cp -f /tmp/netwatch-config/frr/vtysh.conf /etc/frr/vtysh.conf
+      chown -R frr:frr /etc/frr/
+      chmod 640 /etc/frr/frr.conf /etc/frr/daemons /etc/frr/vtysh.conf
+    else
+      echo "WARNING: /tmp/netwatch-config/frr not found — FRR configs not deployed"
+    fi
+
+    # Copy udev rules for interface renaming (MAC -> eth-peer-name)
+    if [ -f /tmp/netwatch-config/frr/70-netwatch-fabric.rules ]; then
+      cp -f /tmp/netwatch-config/frr/70-netwatch-fabric.rules /etc/udev/rules.d/
+      udevadm control --reload-rules
+    fi
+
+    # Enable ip_forward (FRR needs this)
+    sysctl -w net.ipv4.ip_forward=1
+    echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.d/99-netwatch.conf
+
+    # Enable FRR (starts with loopback + mgmt only; fabric NICs attached later)
+    systemctl enable --now frr
+
+    # Enable frr_exporter for Prometheus scraping
+    systemctl enable --now frr_exporter 2>/dev/null || true
   SHELL
 
   # ========================================================================
@@ -107,6 +143,58 @@ Vagrant.configure("2") do |config|
 
     node.vm.provision "shell", path: "scripts/provision-mgmt.sh"
   end
+
+  # ========================================================================
+  # FRR Switch VMs (12 nodes: 2 border + 2 spine + 8 leaf)
+  # Fabric must exist before anything connects to it.
+  # Fabric NICs are hot-plugged post-boot by setup-frr-links.sh.
+  # ========================================================================
+  def define_frr_switch(config, name, mgmt_ip)
+    config.vm.define name do |node|
+      node.vm.hostname = name
+
+      node.vm.provider :libvirt do |lv|
+        lv.memory = 256
+        lv.cpus = 1
+      end
+
+      node.vm.network :private_network,
+        ip: mgmt_ip,
+        libvirt__network_name: "netwatch-mgmt",
+        libvirt__dhcp_enabled: true,
+        libvirt__forward_mode: "none"
+
+      node.vm.synced_folder "generated/frr/#{name}", "/tmp/netwatch-config/frr", type: "rsync"
+
+      node.vm.provision "shell", inline: <<-SH
+        set -e
+        #{COMMON_BASE}
+        #{COMMON_CLIENT}
+        #{FRR_COMMON}
+
+        # Static IP (Vagrant can't reconfigure the NIC it SSH'd in on)
+        ip addr add #{mgmt_ip}/24 dev ens5 2>/dev/null || true
+      SH
+    end
+  end
+
+  # Border routers
+  define_frr_switch(config, "border-1", "192.168.0.10")
+  define_frr_switch(config, "border-2", "192.168.0.11")
+
+  # Spine switches
+  define_frr_switch(config, "spine-1", "192.168.0.20")
+  define_frr_switch(config, "spine-2", "192.168.0.21")
+
+  # Leaf switches
+  define_frr_switch(config, "leaf-1a", "192.168.0.30")
+  define_frr_switch(config, "leaf-1b", "192.168.0.31")
+  define_frr_switch(config, "leaf-2a", "192.168.0.32")
+  define_frr_switch(config, "leaf-2b", "192.168.0.33")
+  define_frr_switch(config, "leaf-3a", "192.168.0.34")
+  define_frr_switch(config, "leaf-3b", "192.168.0.35")
+  define_frr_switch(config, "leaf-4a", "192.168.0.36")
+  define_frr_switch(config, "leaf-4b", "192.168.0.37")
 
   # ========================================================================
   # Bastion VM — sole NAT gateway, north-south boundary
@@ -154,7 +242,7 @@ Vagrant.configure("2") do |config|
   end
 
   # ========================================================================
-  # Compute Servers (4 racks × 4 servers = 16 VMs)
+  # Compute Servers (4 racks x 4 servers = 16 VMs)
   # k3s pre-installed but disabled — cluster formation happens at P7.
   # Data-plane interfaces wired post-boot by scripts/fabric/setup-server-links.sh
   # ========================================================================

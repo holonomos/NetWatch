@@ -1,0 +1,87 @@
+#!/bin/bash
+# NetWatch — FRR VM Fabric Wiring
+# Generated from topology.yml — DO NOT HAND-EDIT
+#
+# Hot-plugs fabric NICs into FRR VMs (via virsh), then configures IPs,
+# loopback, sysctls, and restarts FRR + frr_exporter.
+#
+# Prerequisites: FRR VMs running (vagrant up), fabric bridges exist (setup-bridges.sh).
+# Run as your user (NOT sudo): bash scripts/fabric/setup-frr-links.sh
+# (uses sudo internally for virsh commands only)
+
+set -uo pipefail
+
+VIRSH_PREFIX="NetWatch"
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+echo "NetWatch: Wiring FRR VMs to fabric bridges..."
+
+# Helper: attach a NIC to a VM on a given bridge (idempotent)
+attach_nic() {
+    local vm="$1"
+    local bridge="$2"
+    local mac="$3"
+    local domain="${VIRSH_PREFIX}_${vm}"
+
+    if virsh -c qemu:///system domiflist "$domain" 2>/dev/null </dev/null | grep -qi "$mac"; then
+        echo "    $bridge ($mac): already attached"
+    else
+        virsh -c qemu:///system attach-interface "$domain" \
+            --type bridge \
+            --source "$bridge" \
+            --model virtio \
+            --mac "$mac" \
+            --live \
+            --config </dev/null
+        echo "    $bridge ($mac): attached"
+        sleep 0.5
+    fi
+
+    # Ensure the tap device is actually on the bridge (libvirt sometimes misses this)
+    local vnet
+    vnet=$(virsh -c qemu:///system domiflist "$domain" 2>/dev/null </dev/null | grep -i "$mac" | head -1 | awk '{print $1}')
+    if [ -n "$vnet" ]; then
+        local current_master
+        current_master=$(ip link show "$vnet" 2>/dev/null | grep -oP 'master \K\S+' || true)
+        if [ "$current_master" != "$bridge" ]; then
+            sudo ip link set "$vnet" master "$bridge" 2>/dev/null && \
+                echo "    $bridge ($mac): fixed bridge membership ($vnet)"
+        fi
+    fi
+}
+
+# Helper: configure fabric interfaces inside an FRR VM
+# Uses configure-frr-fabric.sh passed via stdin
+FABRIC_SCRIPT="$PROJECT_ROOT/scripts/fabric/configure-frr-fabric.sh"
+
+configure_frr() {
+    local vm="$1"
+    shift
+    # remaining args: loopback_ip mac1 name1 ip1 prefix1 mac2 name2 ip2 prefix2 ...
+    cd "$PROJECT_ROOT"
+    vagrant ssh "$vm" -c "sudo bash -s -- $*" < "$FABRIC_SCRIPT"
+}
+
+# --- Wire each FRR node ---
+{% for node in frr_nodes %}
+echo ""
+echo "{{ node.name }}: attaching {{ node.interfaces|length }} fabric NICs"
+{% for iface in node.interfaces %}
+attach_nic "{{ node.name }}" "{{ iface.bridge }}" "{{ iface.mac }}"
+{% endfor %}
+configure_frr "{{ node.name }}" \
+    "{{ node.loopback.split('/')[0] }}" \
+{% for iface in node.interfaces %}
+    "{{ iface.mac }}" "{{ iface.name }}" "{{ iface.ip }}" "{{ iface.prefix_len }}"{{ " \\" if not loop.last else "" }}
+{% endfor %}
+
+{% endfor %}
+
+echo ""
+echo "NetWatch: All 12 FRR VMs wired to fabric."
+echo "  - Fabric interfaces: up with IPs (renamed via udev rules)"
+echo "  - Loopback IPs: configured"
+echo "  - ip_forward=1, rp_filter=2 (loose mode)"
+echo "  - FRR + frr_exporter: restarted"
+echo ""
+echo "Verify: vagrant ssh spine-1 -c 'sudo vtysh -c \"show bgp summary\"'"

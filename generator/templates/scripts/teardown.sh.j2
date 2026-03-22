@@ -2,27 +2,41 @@
 # NetWatch — Teardown
 # Generated from topology.yml — DO NOT HAND-EDIT
 #
-# Destroys all FRR containers, veth pairs, and bridges.
-# Does NOT touch VMs (use `vagrant destroy` for that).
+# Shuts down all FRR VMs and removes fabric bridges.
+# Does NOT destroy VMs (use `vagrant destroy` for that).
 #
 # Run as root: sudo ./teardown.sh
 
-set -euo pipefail
+set -uo pipefail
+
+VIRSH_PREFIX="NetWatch"
 
 echo "NetWatch: Tearing down fabric..."
 
-# --- Stop and remove FRR containers ---
-echo "  Stopping FRR containers..."
+# --- Shut down FRR VMs ---
+echo "  Shutting down FRR VMs..."
 {% for node in frr_nodes %}
-docker rm -f {{ node.name }} 2>/dev/null && echo "    {{ node.name }}: removed" || echo "    {{ node.name }}: not running"
+virsh -c qemu:///system shutdown "${VIRSH_PREFIX}_{{ node.name }}" 2>/dev/null && echo "    {{ node.name }}: shutdown sent" || echo "    {{ node.name }}: not running"
+{% endfor %}
+
+# Wait briefly for graceful shutdown
+echo "  Waiting for VMs to shut down..."
+sleep 5
+
+# Force-kill any that didn't shut down gracefully
+{% for node in frr_nodes %}
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_{{ node.name }}" 2>/dev/null || echo "shut off")
+if [ "$STATE" != "shut off" ]; then
+    virsh -c qemu:///system destroy "${VIRSH_PREFIX}_{{ node.name }}" 2>/dev/null && echo "    {{ node.name }}: force-killed" || true
+fi
 {% endfor %}
 
 # --- Remove fabric bridges ---
 echo ""
 echo "  Removing fabric bridges..."
 {% for link in links %}
-ip link set {{ link.bridge }} down 2>/dev/null || true
-ip link del {{ link.bridge }} 2>/dev/null && echo "    {{ link.bridge }}: removed" || true
+sudo ip link set {{ link.bridge }} down 2>/dev/null || true
+sudo ip link del {{ link.bridge }} 2>/dev/null && echo "    {{ link.bridge }}: removed" || true
 {% endfor %}
 
 # --- Management bridge ---
@@ -32,7 +46,7 @@ ip link del {{ link.bridge }} 2>/dev/null && echo "    {{ link.bridge }}: remove
 echo ""
 echo "  Cleaning orphaned veth pairs..."
 for veth in $(ip -o link show | grep -oP 'h-\S+(?=@)' || true); do
-    ip link del "$veth" 2>/dev/null && echo "    $veth: removed" || true
+    sudo ip link del "$veth" 2>/dev/null && echo "    $veth: removed" || true
 done
 
 echo ""
