@@ -24,6 +24,10 @@ REPO_DIR="$PROJECT_ROOT/repo"
 # --- Source pinned versions ------------------------------------------------
 source "$REPO_DIR/versions.env"
 
+K3S_VERSION="${K3S_VERSION:-v1.31.4+k3s1}"
+HELM_VERSION="${HELM_VERSION:-v3.15.4}"
+CILIUM_CLI_VERSION="${CILIUM_CLI_VERSION:-v0.16.15}"
+
 # --- Preflight checks ------------------------------------------------------
 echo "=== NetWatch Repository Builder ==="
 echo ""
@@ -66,6 +70,28 @@ RPM_LIST=(
   unzip
   jq
   dnsmasq
+  # k3s hard dependencies
+  conntrack-tools
+  container-selinux
+  ethtool
+  ipset
+  # k3s soft dependencies
+  socat
+  iproute-tc
+  nfs-utils
+  # SELinux / Ansible
+  python3-libselinux
+  policycoreutils
+  ansible
+  sshpass
+  audit
+  # FRR routing
+  frr
+  # Misc
+  logrotate
+  bash-completion
+  tar
+  bpftool
   # Extras (dev tools, debugging, stress — installed post-boot via provision-extras.sh)
   wget
   git
@@ -93,7 +119,6 @@ RPM_LIST=(
   openssl
   python3
   python3-pip
-  ansible
 )
 
 # Use a Fedora 43 container to download RPMs with correct dependencies.
@@ -172,6 +197,18 @@ download_artifact "prometheus v${PROMETHEUS_VERSION}" \
 download_artifact "grafana v${GRAFANA_VERSION}" \
   "https://dl.grafana.com/oss/release/grafana-${GRAFANA_VERSION}-${GRAFANA_RPM_RELEASE}.x86_64.rpm" \
   "grafana-${GRAFANA_VERSION}-${GRAFANA_RPM_RELEASE}.x86_64.rpm" || FAILED=$((FAILED + 1))
+
+download_artifact "k3s v${K3S_VERSION}" \
+  "https://github.com/k3s-io/k3s/releases/download/${K3S_VERSION}/k3s" \
+  "k3s" || FAILED=$((FAILED + 1))
+
+download_artifact "helm v${HELM_VERSION}" \
+  "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" \
+  "helm-${HELM_VERSION}-linux-amd64.tar.gz" || FAILED=$((FAILED + 1))
+
+download_artifact "cilium CLI v${CILIUM_CLI_VERSION}" \
+  "https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-amd64.tar.gz" \
+  "cilium-linux-amd64.tar.gz" || FAILED=$((FAILED + 1))
 
 # --- Phase 4: Pre-pull Docker images --------------------------------------
 echo ""

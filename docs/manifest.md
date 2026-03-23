@@ -558,7 +558,7 @@ Data sculpture rendering live fabric metrics.
 | Component | Count | RAM | CPUs | Notes |
 |-----------|-------|-----|------|-------|
 | Server VMs | 16 | 768 MB | 1 | k3s compute nodes |
-| Bastion VM | 1 | 384 MB | 1 | NAT gateway, SSH jump |
+| Bastion VM | 1 | 1024 MB | 1 | Admin box (helm, kubectl), NAT |
 | Mgmt VM | 1 | 2048 MB | 2 | Prometheus, Grafana, Loki, dnsmasq, chrony |
 | FRR containers | 12 | ~40 MB | — | Alpine, host Docker |
 | **Total** | **30** | **~15 GB** | — | **~10 GB effective with KSM** |

@@ -59,7 +59,7 @@ Replicated nginx holds >99% availability over 10-min chaos run, <3s max outage.
 
 | Node | Role | Mgmt IP | vCPU | RAM | Services |
 |------|------|---------|------|-----|----------|
-| bastion | SSH jump + NAT | 192.168.0.2 | 1 | 384 MB | sshd, iptables |
+| bastion | Admin + NAT | 192.168.0.2 | 1 | 1024 MB | sshd, iptables, kubectl, helm |
 | mgmt | Observability | 192.168.0.3 | 2 | 2048 MB | Prometheus :9090, Grafana :3000, Loki :3100, dnsmasq :53, chrony :123 |
 
 ---
@@ -272,7 +272,7 @@ Tool: Chaos Mesh (CNCF), installed via Helm on k3s
 | FRR containers | 12 | 40 MB | 480 MB |
 | Server VMs (idle, KSM on) | 16 | ~36 MB eff. | 580 MB |
 | Server VMs (k3s+Cilium) | 16 | ~340 MB eff. | 5,400 MB |
-| Bastion VM | 1 | 100 MB | 100 MB |
+| Bastion VM | 1 | 100 MB | 300 MB |
 | Mgmt VM | 1 | 900 MB | 900 MB |
 | QEMU overhead | 18 VMs | 15 MB | 270 MB |
 | **Fabric only** | | | **~2.3 GB** |

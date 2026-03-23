@@ -61,12 +61,16 @@ source "$PROJECT_ROOT/repo/versions.env"
 
 K3S_VERSION="${K3S_VERSION:-v1.31.4+k3s1}"
 FRR_REPO="${FRR_REPO:-frr-stable}"
+HELM_VERSION="${HELM_VERSION:-v3.15.4}"
+CILIUM_CLI_VERSION="${CILIUM_CLI_VERSION:-v0.16.15}"
 
 echo "=== NetWatch Golden Image Builder ==="
 echo ""
 echo "  Base box:     netwatch-fedora43 (fedora_43.box)"
 echo "  FRR:          $FRR_REPO (RPM from rpm.frrouting.org)"
 echo "  k3s:          $K3S_VERSION"
+echo "  helm:         $HELM_VERSION"
+echo "  cilium cli:   $CILIUM_CLI_VERSION"
 echo "  node_exporter: $NODE_EXPORTER_VERSION"
 echo "  frr_exporter:  $FRR_EXPORTER_VERSION"
 echo "  promtail:      $PROMTAIL_VERSION"
@@ -113,7 +117,7 @@ VAGRANTFILE
 # --- Fix Docker vs libvirt forwarding conflict (BEFORE boot) ---------------
 # Docker sets iptables FORWARD policy to DROP, which blocks libvirt NAT.
 # Apply the fix before vagrant up so the VM has internet from first boot.
-VIRT_BRIDGE=$(virsh -c qemu:///system net-info vagrant-libvirt 2>/dev/null | awk '/Bridge:/{print $2}')
+VIRT_BRIDGE="$(virsh -c qemu:///system net-info vagrant-libvirt 2>/dev/null | awk '/Bridge:/{print $2}' || true)"
 if [ -n "$VIRT_BRIDGE" ]; then
   echo ""
   echo "=== Fixing Docker/libvirt forward conflict (bridge: $VIRT_BRIDGE) ==="
@@ -134,7 +138,7 @@ vagrant up
 
 # If bridge wasn't found pre-boot, try again now (vagrant-libvirt creates it)
 if [ "$FORWARD_FIX_APPLIED" = "0" ]; then
-  VIRT_BRIDGE=$(virsh -c qemu:///system net-info vagrant-libvirt 2>/dev/null | awk '/Bridge:/{print $2}')
+  VIRT_BRIDGE="$(virsh -c qemu:///system net-info vagrant-libvirt 2>/dev/null | awk '/Bridge:/{print $2}' || true)"
   if [ -n "$VIRT_BRIDGE" ]; then
     echo "=== Fixing Docker/libvirt forward conflict (bridge: $VIRT_BRIDGE, post-boot) ==="
     sudo nft insert rule ip filter FORWARD iifname "$VIRT_BRIDGE" accept 2>/dev/null || \
@@ -186,6 +190,8 @@ dnf install -y \
   `# === Ansible target requirements ===` \
   python3 \
   python3-libselinux \
+  ansible \
+  sshpass \
   \
   `# === SELinux management ===` \
   policycoreutils \
@@ -217,6 +223,7 @@ dnf install -y \
   nmap-ncat \
   bash-completion \
   tar \
+  bpftool \
   unzip
 
 echo ""
@@ -278,32 +285,32 @@ PROVISION_K3S
 echo ""
 echo "=== Phase 3: Binary artifacts ==="
 
-vagrant ssh -c "sudo bash -s" <<PROVISION_BINS
+vagrant ssh -c "sudo env NODE_EXPORTER_VERSION='${NODE_EXPORTER_VERSION}' FRR_EXPORTER_VERSION='${FRR_EXPORTER_VERSION}' PROMTAIL_VERSION='${PROMTAIL_VERSION}' LOKI_VERSION='${LOKI_VERSION}' PROMETHEUS_VERSION='${PROMETHEUS_VERSION}' GRAFANA_VERSION='${GRAFANA_VERSION}' GRAFANA_RPM_RELEASE='${GRAFANA_RPM_RELEASE}' HELM_VERSION='${HELM_VERSION}' CILIUM_CLI_VERSION='${CILIUM_CLI_VERSION}' bash -s" <<'PROVISION_BINS'
 set -euo pipefail
 
 echo "--- node_exporter v${NODE_EXPORTER_VERSION} ---"
 curl -fSL "https://github.com/prometheus/node_exporter/releases/download/v${NODE_EXPORTER_VERSION}/node_exporter-${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz" \
   | tar xz -C /usr/local/bin --strip-components=1 --wildcards '*/node_exporter'
-node_exporter --version 2>&1 | head -1
+node_exporter --version 2>&1 || true
 
 echo "--- frr_exporter v${FRR_EXPORTER_VERSION} ---"
 curl -fSL "https://github.com/tynany/frr_exporter/releases/download/v${FRR_EXPORTER_VERSION}/frr_exporter-${FRR_EXPORTER_VERSION}.linux-amd64.tar.gz" \
   | tar xz -C /usr/local/bin --strip-components=1 --wildcards '*/frr_exporter'
-frr_exporter --version 2>&1 | head -1 || true
+frr_exporter --version 2>&1 || true
 
 echo "--- promtail v${PROMTAIL_VERSION} ---"
 curl -fSL "https://github.com/grafana/loki/releases/download/v${PROMTAIL_VERSION}/promtail-linux-amd64.zip" -o /tmp/promtail.zip
 unzip -o /tmp/promtail.zip -d /tmp/
 mv /tmp/promtail-linux-amd64 /usr/local/bin/promtail
 chmod +x /usr/local/bin/promtail
-promtail --version 2>&1 | head -1
+promtail --version 2>&1 || true
 
 echo "--- loki v${LOKI_VERSION} ---"
 curl -fSL "https://github.com/grafana/loki/releases/download/v${LOKI_VERSION}/loki-linux-amd64.zip" -o /tmp/loki.zip
 unzip -o /tmp/loki.zip -d /tmp/
 mv /tmp/loki-linux-amd64 /usr/local/bin/loki
 chmod +x /usr/local/bin/loki
-loki --version 2>&1 | head -1
+loki --version 2>&1 || true
 
 echo "--- prometheus v${PROMETHEUS_VERSION} ---"
 curl -fSL "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz" \
@@ -313,11 +320,21 @@ cp /tmp/prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool /usr/local/bin/
 mkdir -p /usr/local/share/prometheus
 cp -r /tmp/prometheus-${PROMETHEUS_VERSION}.linux-amd64/consoles /usr/local/share/prometheus/
 cp -r /tmp/prometheus-${PROMETHEUS_VERSION}.linux-amd64/console_libraries /usr/local/share/prometheus/
-prometheus --version 2>&1 | head -1
+prometheus --version 2>&1 || true
 
 echo "--- grafana v${GRAFANA_VERSION} ---"
 dnf install -y "https://dl.grafana.com/oss/release/grafana-${GRAFANA_VERSION}-${GRAFANA_RPM_RELEASE}.x86_64.rpm"
-grafana-server -v 2>&1 | head -1
+grafana-server -v 2>&1 || true
+
+echo "--- helm v${HELM_VERSION} ---"
+curl -fSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" \
+  | tar xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
+helm version --client 2>&1 || true
+
+echo "--- cilium CLI v${CILIUM_CLI_VERSION} ---"
+curl -fSL "https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-amd64.tar.gz" \
+  | tar xz -C /usr/local/bin cilium
+cilium version --client 2>&1 || true
 
 echo ""
 echo "--- All binaries installed ---"
@@ -488,6 +505,7 @@ echo ""
 echo "  Baked in:"
 echo "    RPMs:     chrony rsyslog iptables-services dnsmasq + debug tools"
 echo "    k3s:      $K3S_VERSION (binary + kubectl/crictl/ctr symlinks)"
+echo "    k8s prod: helm $HELM_VERSION, cilium $CILIUM_CLI_VERSION, bpftool"
 echo "    Obs:      node_exporter $NODE_EXPORTER_VERSION"
 echo "              frr_exporter  $FRR_EXPORTER_VERSION"
 echo "              promtail      $PROMTAIL_VERSION"
