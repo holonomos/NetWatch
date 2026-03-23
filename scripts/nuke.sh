@@ -6,6 +6,7 @@
 # and detaches all fabric NICs from VMs.
 #
 # Does NOT destroy server/bastion/mgmt VMs — use vagrant halt/destroy for those.
+# Protects management NICs (netwatch-mgmt bridge) from being detached.
 #
 # Usage: bash scripts/nuke.sh
 # ==========================================================================
@@ -13,9 +14,16 @@ set -uo pipefail
 
 VIRSH_PREFIX="NetWatch"
 
+# --- Resolve management bridge name (must be protected from detach) ---
+MGMT_BRIDGE=$(virsh -c qemu:///system net-info netwatch-mgmt 2>/dev/null | awk '/Bridge:/{print $2}')
+if [ -z "$MGMT_BRIDGE" ]; then
+    MGMT_BRIDGE="virbr2"  # fallback
+fi
+
 echo "========================================"
 echo " NetWatch: FABRIC NUKE"
 echo "========================================"
+echo "  Management bridge: $MGMT_BRIDGE (protected)"
 
 # --- 1. Kill any stuck virsh processes ---
 pkill -f "virsh.*detach" 2>/dev/null || true
@@ -36,18 +44,39 @@ for node in border-1 border-2 spine-1 spine-2 leaf-{1..4}{a,b}; do
     fi
 done
 
-# --- 3. Detach all fabric NICs from VMs ---
+# --- 3. Detach fabric NICs from VMs (protect management NICs) ---
 echo ""
 echo "=== Detaching fabric NICs from VMs ==="
 for vm in $(virsh -c qemu:///system list --all --name 2>/dev/null | grep -i netwatch); do
-    # Detach all bridge-type interfaces (fabric NICs)
-    while true; do
-        mac=$(virsh -c qemu:///system domiflist "$vm" 2>/dev/null | grep "bridge" | head -1 | awk '{print $5}')
-        [ -z "$mac" ] && break
-        virsh -c qemu:///system detach-interface "$vm" bridge --mac "$mac" --config 2>/dev/null || break
-    done
-    remaining=$(virsh -c qemu:///system domiflist "$vm" 2>/dev/null | grep -c bridge || echo 0)
-    echo "  $vm: cleaned ($remaining fabric NICs remaining)"
+    vm_state=$(virsh -c qemu:///system domstate "$vm" 2>/dev/null || echo "shut off")
+    detached=0
+
+    # Parse domiflist: skip header lines, skip mgmt bridge NICs
+    while IFS= read -r line; do
+        # domiflist columns: Interface  Type  Source  Model  MAC
+        iface_source=$(echo "$line" | awk '{print $3}')
+        iface_mac=$(echo "$line" | awk '{print $5}')
+        iface_type=$(echo "$line" | awk '{print $2}')
+
+        # Skip non-bridge interfaces
+        [ "$iface_type" = "bridge" ] || continue
+
+        # PROTECT management NICs — never detach the mgmt bridge
+        if [ "$iface_source" = "$MGMT_BRIDGE" ]; then
+            continue
+        fi
+
+        # Detach from both live (if running) and persistent config
+        if [ "$vm_state" = "running" ]; then
+            virsh -c qemu:///system detach-interface "$vm" bridge --mac "$iface_mac" --live --config 2>/dev/null && \
+                detached=$((detached + 1)) || true
+        else
+            virsh -c qemu:///system detach-interface "$vm" bridge --mac "$iface_mac" --config 2>/dev/null && \
+                detached=$((detached + 1)) || true
+        fi
+    done < <(virsh -c qemu:///system domiflist "$vm" 2>/dev/null | tail -n +3)
+
+    echo "  $vm: detached $detached fabric NICs (mgmt NIC preserved)"
 done
 
 # --- 4. Remove ALL fabric bridges ---
@@ -80,7 +109,8 @@ echo "========================================"
 echo " CLEAN SLATE"
 echo "========================================"
 echo "  FRR VMs: all force-killed"
-echo "  Fabric bridges: $(ip link show type bridge 2>/dev/null | grep -c 'br[0-9]')"
+echo "  Fabric bridges: $(ip link show type bridge 2>/dev/null | grep -c 'br[0-9]' || echo 0)"
+echo "  Mgmt bridge: $MGMT_BRIDGE (preserved)"
 echo ""
 echo "  Server/bastion/mgmt VMs untouched. Use 'vagrant halt' or 'vagrant destroy -f' separately."
 echo "  To rebuild fabric: make up"

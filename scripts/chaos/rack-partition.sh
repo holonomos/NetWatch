@@ -11,7 +11,7 @@
 #   bash scripts/chaos/rack-partition.sh rack-1
 #   bash scripts/chaos/rack-partition.sh rack-3 --restore
 
-set -uo pipefail
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"

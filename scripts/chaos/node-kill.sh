@@ -14,7 +14,7 @@
 #   bash scripts/chaos/node-kill.sh spine-1 --restore
 #   bash scripts/chaos/node-kill.sh leaf-2a
 
-set -uo pipefail
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"
@@ -88,8 +88,10 @@ if [[ "$RESTORE" == true ]]; then
 
     # Wait for VM to be accessible
     log_chaos "Waiting for VM to become accessible..."
+    SSH_OK=false
     for i in $(seq 1 30); do
         if cd "$PROJECT_ROOT" && vagrant ssh "$NODE" -c "true" 2>/dev/null; then
+            SSH_OK=true
             break
         fi
         sleep 2
@@ -97,6 +99,12 @@ if [[ "$RESTORE" == true ]]; then
 
     NEW_STATE=$(virsh -c qemu:///system domstate "$DOMAIN" 2>/dev/null || echo "unknown")
     log_chaos "VM '${NODE}' state: ${NEW_STATE}"
+
+    if [[ "$SSH_OK" == false ]]; then
+        log_chaos "WARNING: VM '${NODE}' started but SSH not accessible after 60s"
+        log_chaos "  Manual intervention may be required: vagrant ssh ${NODE}"
+        exit 1
+    fi
 
     log_chaos "EXPECTED: FRR daemons restart inside VM (NM profiles persist IPs)"
     log_chaos "EXPECTED: BFD sessions re-establish on all interfaces within ~3s"

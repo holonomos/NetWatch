@@ -4,26 +4,31 @@
 # ==========================================================================
 # Creates VxLAN interfaces and bridges on all 8 leaf VMs.
 # Each leaf becomes a VTEP sourcing VxLAN from its loopback IP.
+# Also deploys the EVPN metrics collector for Prometheus.
 #
-# VNI 100: shared L2 domain across all racks (for k3s pod networking, etc.)
+# VNI 100: shared L2 domain across all racks
 #
 # Prerequisites:
 #   - All leaf VMs running with fabric interfaces configured
-#   - BGP EVPN sessions established (show bgp l2vpn evpn summary)
-#   - Leaf loopbacks reachable from all other leafs
+#   - BGP EVPN sessions established
+#   - Leaf loopbacks reachable
 #
 # Run as your user: bash scripts/fabric/setup-evpn.sh
 # ==========================================================================
 set -uo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-VNI=100
+# MUST MATCH topology.yml evpn.vni_base
+VNI=10000
+COLLECTOR_SCRIPT="$PROJECT_ROOT/scripts/fabric/evpn-metrics-collector.sh"
+CONFIGURE_SCRIPT="$PROJECT_ROOT/scripts/fabric/configure-evpn-vtep.sh"
 
 echo "========================================"
 echo " NetWatch: Configuring EVPN/VxLAN Overlay"
 echo "========================================"
 
 # Leaf VTEP definitions: name loopback_ip
+# MUST MATCH topology.yml nodes.leafs[].loopback (without /32 suffix)
 declare -A LEAFS=(
     [leaf-1a]=10.0.3.1
     [leaf-1b]=10.0.3.2
@@ -35,65 +40,23 @@ declare -A LEAFS=(
     [leaf-4b]=10.0.3.8
 )
 
-configure_vtep() {
-    local leaf="$1"
-    local loopback="$2"
-    local vni="$3"
-
-    echo ""
-    echo "--- $leaf (VTEP: $loopback, VNI: $vni) ---"
-
-    cd "$PROJECT_ROOT"
-    vagrant ssh "$leaf" -c "sudo bash -s -- $loopback $vni" <<'VTEPSCRIPT'
-set -e
-LOOPBACK="$1"
-VNI="$2"
-VXLAN_IF="vxlan${VNI}"
-BRIDGE_IF="br-vni${VNI}"
-
-# Create VxLAN interface
-# - id: VNI number
-# - local: source IP (leaf loopback)
-# - dstport: standard VxLAN port
-# - nolearning: let EVPN handle MAC learning via BGP, not data-plane flooding
-if ! ip link show "$VXLAN_IF" &>/dev/null; then
-    ip link add "$VXLAN_IF" type vxlan \
-        id "$VNI" \
-        local "$LOOPBACK" \
-        dstport 4789 \
-        nolearning
-    echo "  Created $VXLAN_IF (VNI $VNI, source $LOOPBACK)"
-else
-    echo "  $VXLAN_IF already exists"
-fi
-
-# Create bridge for this VNI
-if ! ip link show "$BRIDGE_IF" &>/dev/null; then
-    ip link add "$BRIDGE_IF" type bridge
-    ip link set "$BRIDGE_IF" up
-    echo "  Created $BRIDGE_IF"
-else
-    echo "  $BRIDGE_IF already exists"
-fi
-
-# Attach VxLAN interface to bridge
-if ! ip link show "$VXLAN_IF" | grep -q "master $BRIDGE_IF"; then
-    ip link set "$VXLAN_IF" master "$BRIDGE_IF"
-    echo "  Attached $VXLAN_IF to $BRIDGE_IF"
-fi
-ip link set "$VXLAN_IF" up
-
-# Verify FRR sees the VNI
-echo "  FRR VNI status:"
-vtysh -c "show evpn vni $VNI" 2>/dev/null | head -5 || echo "  (FRR not aware of VNI yet — will detect on next scan)"
-
-echo "  VTEP $LOOPBACK configured for VNI $VNI"
-VTEPSCRIPT
-}
-
-# Configure all 8 leaf VTEPs
+# Configure each leaf VTEP sequentially (no stdin races)
 for leaf in "${!LEAFS[@]}"; do
-    configure_vtep "$leaf" "${LEAFS[$leaf]}" "$VNI"
+    loopback="${LEAFS[$leaf]}"
+    echo ""
+    echo "--- $leaf (VTEP: $loopback, VNI: $VNI) ---"
+
+    # Upload the collector script FIRST (before the timer that references it)
+    ( cat "$COLLECTOR_SCRIPT" | vagrant ssh "$leaf" -c "sudo bash -c 'cat > /usr/local/bin/evpn-metrics-collector.sh && chmod +x /usr/local/bin/evpn-metrics-collector.sh'" ) || \
+        echo "  WARNING: failed to upload collector to $leaf"
+
+    # Configure VTEP (creates VxLAN, bridge, enables systemd timer for collector)
+    ( vagrant ssh "$leaf" -c "sudo bash -s -- $loopback $VNI" < "$CONFIGURE_SCRIPT" )
+
+    # Run collector once to seed initial metrics
+    ( vagrant ssh "$leaf" -c "sudo /usr/local/bin/evpn-metrics-collector.sh" 2>/dev/null ) || true
+
+    echo "  $leaf: VTEP + collector configured"
 done
 
 echo ""
@@ -107,4 +70,3 @@ echo ""
 echo "Verify:"
 echo "  vagrant ssh leaf-1a -c 'sudo vtysh -c \"show evpn vni\"'"
 echo "  vagrant ssh leaf-1a -c 'sudo vtysh -c \"show bgp l2vpn evpn route\"'"
-echo "  vagrant ssh spine-1 -c 'sudo vtysh -c \"show bgp l2vpn evpn summary\"'"

@@ -10,7 +10,7 @@
 #   bash scripts/chaos/link-down.sh spine-1 leaf-1a
 #   bash scripts/chaos/link-down.sh spine-1 leaf-1a --restore
 
-set -uo pipefail
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"

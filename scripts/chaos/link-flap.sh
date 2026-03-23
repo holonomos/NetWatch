@@ -12,7 +12,7 @@
 #   bash scripts/chaos/link-flap.sh spine-1 leaf-1a
 #   bash scripts/chaos/link-flap.sh border-1 spine-2 --interval 3 --count 10
 
-set -uo pipefail
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"

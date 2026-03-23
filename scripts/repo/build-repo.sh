@@ -178,8 +178,12 @@ echo ""
 echo "=== Phase 4: Pre-pulling Docker images ==="
 echo ""
 
-echo "  Pulling ${FRR_IMAGE}..."
-docker pull "$FRR_IMAGE"
+if [ -n "${FRR_IMAGE:-}" ]; then
+  echo "  Pulling ${FRR_IMAGE}..."
+  docker pull "$FRR_IMAGE"
+else
+  echo "  [skip] FRR_IMAGE not set (FRR now installed via RPM in golden image)"
+fi
 
 echo "  Installing Loki Docker logging driver..."
 docker plugin install grafana/loki-docker-driver:latest --alias loki --grant-all-permissions 2>/dev/null || \

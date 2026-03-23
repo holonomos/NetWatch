@@ -390,13 +390,26 @@ def build_bridge_context(all_links: list, nodes: dict, topo: dict) -> dict:
     for name, node in sorted(nodes.items()):
         if node["role"] == "server":
             srv_index += 1
-            leaf_a_mac = f"02:4E:57:06:{srv_index:02X}:01"
-            leaf_b_mac = f"02:4E:57:06:{srv_index:02X}:02"
+            leaf_a_mac = f"02:4E:57:04:{srv_index:02X}:01"
+            leaf_b_mac = f"02:4E:57:04:{srv_index:02X}:02"
+
+            # Validate: each server must have exactly 2 fabric interfaces
+            ifaces = node["interfaces"]
+            if len(ifaces) != 2:
+                print(f"ERROR: server {name} has {len(ifaces)} fabric interfaces "
+                      f"(expected 2)", file=sys.stderr)
+                sys.exit(1)
+
+            # Sort interfaces: leaf-Xa first (the "a" leaf), leaf-Xb second
+            # This ensures interfaces[0] is always the "a" leaf regardless
+            # of link ordering in topology.yml
+            sorted_ifaces = sorted(ifaces, key=lambda i: i["peer"])
+
             server_nodes.append({
                 "name": name,
                 "mgmt_ip": node["mgmt_ip"],
                 "loopback": node.get("loopback", ""),
-                "interfaces": node["interfaces"],
+                "interfaces": sorted_ifaces,
                 "leaf_a_mac": leaf_a_mac,
                 "leaf_b_mac": leaf_b_mac,
             })

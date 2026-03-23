@@ -13,7 +13,7 @@
 #   bash scripts/chaos/packet-loss.sh spine-1 leaf-1a --loss 50%
 #   bash scripts/chaos/packet-loss.sh spine-1 leaf-1a --restore
 
-set -uo pipefail
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"

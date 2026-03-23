@@ -26,7 +26,6 @@ Vagrant.configure("2") do |config|
   config.vm.provider :libvirt do |libvirt|
     libvirt.driver = "kvm"
     libvirt.storage_pool_name = "default"
-    libvirt.memorybacking :nosharepages, :locked => false
     libvirt.mgmt_attach = false
   end
 
@@ -54,7 +53,10 @@ Vagrant.configure("2") do |config|
     # Fix SELinux contexts (virt-sysprep mislabels /usr/local/bin as user_tmp_t)
     restorecon -R /usr/local/bin
 
-    # Enable node_exporter (binary + unit baked into image)
+    # Enable node_exporter with textfile collector (for custom metrics like EVPN)
+    mkdir -p /var/lib/node_exporter/textfile
+    sed -i 's|ExecStart=/usr/local/bin/node_exporter.*|ExecStart=/usr/local/bin/node_exporter --collector.textfile.directory=/var/lib/node_exporter/textfile|' /etc/systemd/system/node_exporter.service
+    systemctl daemon-reload
     systemctl enable --now node_exporter
 
     # SSH hardening — disable password auth, key-only access
@@ -73,7 +75,7 @@ Vagrant.configure("2") do |config|
   COMMON_CLIENT = <<~SHELL
     # Chrony — NTP client, sync from mgmt
     cat > /etc/chrony.conf <<CHEOF
-    pool 192.168.0.3 iburst
+    server 192.168.0.3 iburst
     stratumweight 0
     driftfile /var/lib/chrony/drift
     rtcsync
@@ -111,7 +113,7 @@ Vagrant.configure("2") do |config|
 
     # Enable ip_forward (FRR needs this)
     sysctl -w net.ipv4.ip_forward=1
-    echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.d/99-netwatch.conf
+    grep -q 'net.ipv4.ip_forward=1' /etc/sysctl.d/99-netwatch.conf || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.d/99-netwatch.conf
 
     # Enable FRR (starts with loopback + mgmt only; fabric NICs attached later)
     systemctl enable --now frr
@@ -231,7 +233,7 @@ Vagrant.configure("2") do |config|
 
       # IP forwarding for NAT gateway
       sysctl -w net.ipv4.ip_forward=1
-      echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.d/99-netwatch.conf
+      grep -q 'net.ipv4.ip_forward=1' /etc/sysctl.d/99-netwatch.conf || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.d/99-netwatch.conf
 
       # NAT masquerade — dynamically find the internet-facing interface
       INET_IF=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1); exit}')
@@ -274,6 +276,9 @@ Vagrant.configure("2") do |config|
         set -e
         #{COMMON_BASE}
         #{COMMON_CLIENT}
+
+        # Rack metadata (used by k3s node labels at P7)
+        echo '#{rack}' > /etc/netwatch-rack
 
         # Static IP (Vagrant can't reconfigure the NIC it SSH'd in on)
         ip addr add #{mgmt_ip}/24 dev ens5 2>/dev/null || true

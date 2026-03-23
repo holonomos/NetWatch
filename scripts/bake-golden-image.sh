@@ -27,6 +27,34 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BAKE_DIR="$PROJECT_ROOT/.bake-tmp"
 OUTPUT_BOX="$PROJECT_ROOT/netwatch-golden.box"
+FORWARD_FIX_APPLIED=0
+VIRT_BRIDGE=""
+
+# --- Cleanup trap (runs on any exit — success or failure) ------------------
+cleanup() {
+  local exit_code=$?
+  echo ""
+  if [ "$exit_code" -ne 0 ]; then
+    echo "=== Bake FAILED (exit $exit_code) — cleaning up ==="
+  fi
+  # Destroy bake VM if it exists
+  if [ -d "$BAKE_DIR" ]; then
+    cd "$BAKE_DIR" 2>/dev/null && vagrant destroy -f 2>/dev/null || true
+    cd "$PROJECT_ROOT"
+    rm -rf "$BAKE_DIR"
+  fi
+  # Remove temporary forward rules
+  if [ "$FORWARD_FIX_APPLIED" = "1" ] && [ -n "$VIRT_BRIDGE" ]; then
+    echo "  Removing temporary forward rules for $VIRT_BRIDGE..."
+    sudo nft -a list chain ip filter FORWARD 2>/dev/null | grep "iifname \"$VIRT_BRIDGE\" accept" | awk '{print $NF}' | while read -r h; do
+      sudo nft delete rule ip filter FORWARD handle "$h" 2>/dev/null || true
+    done
+    sudo nft -a list chain ip filter FORWARD 2>/dev/null | grep "oifname \"$VIRT_BRIDGE\" accept" | awk '{print $NF}' | while read -r h; do
+      sudo nft delete rule ip filter FORWARD handle "$h" 2>/dev/null || true
+    done
+  fi
+}
+trap cleanup EXIT
 
 # --- Source pinned versions ------------------------------------------------
 source "$PROJECT_ROOT/repo/versions.env"
@@ -82,15 +110,9 @@ Vagrant.configure("2") do |config|
 end
 VAGRANTFILE
 
-# --- Boot the bake VM ------------------------------------------------------
-echo ""
-echo "=== Booting bake VM ==="
-cd "$BAKE_DIR"
-vagrant up
-
-# --- Fix Docker vs libvirt forwarding conflict ----------------------------
+# --- Fix Docker vs libvirt forwarding conflict (BEFORE boot) ---------------
 # Docker sets iptables FORWARD policy to DROP, which blocks libvirt NAT.
-# Add a temporary rule to allow traffic on the vagrant-libvirt bridge.
+# Apply the fix before vagrant up so the VM has internet from first boot.
 VIRT_BRIDGE=$(virsh -c qemu:///system net-info vagrant-libvirt 2>/dev/null | awk '/Bridge:/{print $2}')
 if [ -n "$VIRT_BRIDGE" ]; then
   echo ""
@@ -101,8 +123,26 @@ if [ -n "$VIRT_BRIDGE" ]; then
     sudo iptables -I FORWARD -o "$VIRT_BRIDGE" -j ACCEPT 2>/dev/null || true
   FORWARD_FIX_APPLIED=1
 else
-  echo "WARNING: Could not find vagrant-libvirt bridge. Internet may not work in bake VM."
-  FORWARD_FIX_APPLIED=0
+  echo "WARNING: Could not find vagrant-libvirt bridge. Will retry after boot."
+fi
+
+# --- Boot the bake VM ------------------------------------------------------
+echo ""
+echo "=== Booting bake VM ==="
+cd "$BAKE_DIR"
+vagrant up
+
+# If bridge wasn't found pre-boot, try again now (vagrant-libvirt creates it)
+if [ "$FORWARD_FIX_APPLIED" = "0" ]; then
+  VIRT_BRIDGE=$(virsh -c qemu:///system net-info vagrant-libvirt 2>/dev/null | awk '/Bridge:/{print $2}')
+  if [ -n "$VIRT_BRIDGE" ]; then
+    echo "=== Fixing Docker/libvirt forward conflict (bridge: $VIRT_BRIDGE, post-boot) ==="
+    sudo nft insert rule ip filter FORWARD iifname "$VIRT_BRIDGE" accept 2>/dev/null || \
+      sudo iptables -I FORWARD -i "$VIRT_BRIDGE" -j ACCEPT 2>/dev/null || true
+    sudo nft insert rule ip filter FORWARD oifname "$VIRT_BRIDGE" accept 2>/dev/null || \
+      sudo iptables -I FORWARD -o "$VIRT_BRIDGE" -j ACCEPT 2>/dev/null || true
+    FORWARD_FIX_APPLIED=1
+  fi
 fi
 
 # Verify connectivity
@@ -300,7 +340,7 @@ Description=Prometheus Node Exporter
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/node_exporter
+ExecStart=/usr/local/bin/node_exporter --collector.textfile.directory=/var/lib/node_exporter/textfile
 Restart=always
 RestartSec=5
 
@@ -367,6 +407,7 @@ WantedBy=multi-user.target
 EOF
 
 # --- Config directories (populated by Vagrantfile provisioner) ---
+mkdir -p /var/lib/node_exporter/textfile
 mkdir -p /etc/prometheus /var/lib/prometheus
 mkdir -p /etc/loki /var/lib/loki
 mkdir -p /etc/promtail
@@ -432,21 +473,9 @@ echo "=== Phase 6: Packaging golden box ==="
 vagrant halt
 vagrant package --output "$OUTPUT_BOX"
 
-# --- Teardown ---------------------------------------------------------------
-echo ""
-echo "=== Tearing down bake VM ==="
-vagrant destroy -f
-cd "$PROJECT_ROOT"
-rm -rf "$BAKE_DIR"
-
-# Remove temporary forward rules
-if [ "${FORWARD_FIX_APPLIED:-0}" = "1" ] && [ -n "${VIRT_BRIDGE:-}" ]; then
-  echo "  Removing temporary forward rules for $VIRT_BRIDGE..."
-  sudo nft delete rule ip filter FORWARD handle \
-    $(sudo nft -a list chain ip filter FORWARD 2>/dev/null | grep "iifname \"$VIRT_BRIDGE\" accept" | awk '{print $NF}') 2>/dev/null || true
-  sudo nft delete rule ip filter FORWARD handle \
-    $(sudo nft -a list chain ip filter FORWARD 2>/dev/null | grep "oifname \"$VIRT_BRIDGE\" accept" | awk '{print $NF}') 2>/dev/null || true
-fi
+# --- Teardown (handled by cleanup trap on EXIT) ----------------------------
+# The cleanup function destroys the bake VM, removes .bake-tmp, and cleans
+# nft rules. It runs automatically on both success and failure.
 
 # --- Summary -----------------------------------------------------------------
 echo ""

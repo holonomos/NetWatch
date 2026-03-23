@@ -5,7 +5,7 @@
 # Shuts down all FRR VMs and removes fabric bridges.
 # Does NOT destroy VMs (use `vagrant destroy` for that).
 #
-# Run as root: sudo ./teardown.sh
+# Run as your user (uses sudo internally for bridge commands only).
 
 set -uo pipefail
 

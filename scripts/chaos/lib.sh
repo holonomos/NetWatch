@@ -181,7 +181,7 @@ annotate() {
 
     local payload
     payload=$(printf '{"text":"%s","tags":%s}' \
-        "$(echo "$text" | sed 's/"/\\"/g')" \
+        "$(echo "$text" | sed 's/\\/\\\\/g; s/"/\\"/g; s/	/\\t/g' | tr '\n' ' ')" \
         "$tags_json")
 
     curl -s -o /dev/null -w "" \

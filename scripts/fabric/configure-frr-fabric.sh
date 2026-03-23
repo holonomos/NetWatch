@@ -140,6 +140,12 @@ done
 # Reload NM to pick up new profiles
 nmcli connection reload 2>/dev/null || true
 
+# --- Validate at least one interface was configured ---
+if [ "$IFACE_COUNT" -eq 0 ]; then
+    echo "  ERROR: 0 fabric interfaces configured — NICs may not be attached yet"
+    exit 1
+fi
+
 # --- Restart FRR ---
 echo "  Restarting FRR..."
 systemctl restart frr

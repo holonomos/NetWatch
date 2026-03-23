@@ -9,7 +9,7 @@
 # IP persistence: writes NM keyfiles for each fabric interface and an
 # ECMP dispatcher script so routes survive reboots.
 # ==========================================================================
-set -e
+set -euo pipefail
 
 mac_a="$1"
 ip_a="$2"
@@ -29,10 +29,13 @@ fi
 
 # Find interface by MAC address (compare lowercase)
 find_if_by_mac() {
-    local target_mac="$(echo $1 | tr '[:upper:]' '[:lower:]')"
+    local target_mac
+    target_mac="$(echo "$1" | tr '[:upper:]' '[:lower:]')"
     for iface in /sys/class/net/*; do
+        local iname
         iname=$(basename "$iface")
         [ "$iname" = "lo" ] && continue
+        local mac
         mac=$(cat "$iface/address" 2>/dev/null || true)
         if [ "$mac" = "$target_mac" ]; then
             echo "$iname"
@@ -46,27 +49,27 @@ IF_A=$(find_if_by_mac "$mac_a") || { echo "ERROR: no interface with MAC $mac_a";
 IF_B=$(find_if_by_mac "$mac_b") || { echo "ERROR: no interface with MAC $mac_b"; exit 1; }
 
 # Configure interfaces
-ip addr flush dev $IF_A 2>/dev/null || true
-ip addr add ${ip_a}/${prefix} dev $IF_A
-ip link set $IF_A up
+ip addr flush dev "$IF_A" 2>/dev/null || true
+ip addr add "${ip_a}/${prefix}" dev "$IF_A"
+ip link set "$IF_A" up
 
-ip addr flush dev $IF_B 2>/dev/null || true
-ip addr add ${ip_b}/${prefix} dev $IF_B
-ip link set $IF_B up
+ip addr flush dev "$IF_B" 2>/dev/null || true
+ip addr add "${ip_b}/${prefix}" dev "$IF_B"
+ip link set "$IF_B" up
 
 # ECMP routes for fabric prefixes
 ip route replace 10.0.0.0/8 \
-    nexthop via ${gw_a} dev $IF_A weight 1 \
-    nexthop via ${gw_b} dev $IF_B weight 1
+    nexthop via "${gw_a}" dev "$IF_A" weight 1 \
+    nexthop via "${gw_b}" dev "$IF_B" weight 1
 ip route replace 172.16.0.0/12 \
-    nexthop via ${gw_a} dev $IF_A weight 1 \
-    nexthop via ${gw_b} dev $IF_B weight 1
+    nexthop via "${gw_a}" dev "$IF_A" weight 1 \
+    nexthop via "${gw_b}" dev "$IF_B" weight 1
 
 # Replace default route with ECMP through fabric (north-south path)
 if [ "$no_default" != "--no-default-route" ]; then
     ip route replace default \
-        nexthop via ${gw_a} dev $IF_A weight 1 \
-        nexthop via ${gw_b} dev $IF_B weight 1
+        nexthop via "${gw_a}" dev "$IF_A" weight 1 \
+        nexthop via "${gw_b}" dev "$IF_B" weight 1
 fi
 
 echo "  $IF_A = ${ip_a}/${prefix} -> gw ${gw_a}"
@@ -95,14 +98,14 @@ cat > "/etc/NetworkManager/system-connections/fabric-${IF_A}.nmconnection" <<NME
 id=fabric-${IF_A}
 type=ethernet
 interface-name=${IF_A}
-autoconnect=yes
+autoconnect=true
 
 [ethernet]
 mac-address=${mac_a}
 
 [ipv4]
 method=manual
-addresses=${ip_a}/${prefix}
+address1=${ip_a}/${prefix}
 
 [ipv6]
 method=disabled
@@ -115,14 +118,14 @@ cat > "/etc/NetworkManager/system-connections/fabric-${IF_B}.nmconnection" <<NME
 id=fabric-${IF_B}
 type=ethernet
 interface-name=${IF_B}
-autoconnect=yes
+autoconnect=true
 
 [ethernet]
 mac-address=${mac_b}
 
 [ipv4]
 method=manual
-addresses=${ip_b}/${prefix}
+address1=${ip_b}/${prefix}
 
 [ipv6]
 method=disabled
@@ -149,6 +152,9 @@ fi
 # NetworkManager dispatcher runs scripts in /etc/NetworkManager/dispatcher.d/
 # when interface state changes. We use this to re-apply ECMP routes after
 # both fabric interfaces are up. The script is idempotent.
+#
+# Uses MAC-based interface lookup so routes survive interface renumbering
+# across reboots (kernel may assign different ens* names after hot-plug).
 mkdir -p /etc/NetworkManager/dispatcher.d
 cat > /etc/NetworkManager/dispatcher.d/99-netwatch-ecmp <<'DISPEOF'
 #!/usr/bin/env bash
@@ -163,29 +169,54 @@ case "$CONN_ID" in
     *) exit 0 ;;
 esac
 
+# Resolve interface names by MAC (survives renumbering across reboots)
+find_if_by_mac() {
+    local target_mac
+    target_mac="$(echo "$1" | tr '[:upper:]' '[:lower:]')"
+    for iface in /sys/class/net/*; do
+        local iname
+        iname=$(basename "$iface")
+        [ "$iname" = "lo" ] && continue
+        local mac
+        mac=$(cat "$iface/address" 2>/dev/null || true)
+        if [ "$mac" = "$target_mac" ]; then
+            echo "$iname"
+            return 0
+        fi
+    done
+    return 1
+}
+
 DISPEOF
 
-# Append the actual routes (not quoted — we want variable expansion)
+# Append MAC constants and route logic (not quoted — we want variable expansion)
 cat >> /etc/NetworkManager/dispatcher.d/99-netwatch-ecmp <<DISPEOF
+
+# MACs for fabric interfaces (stable across reboots)
+MAC_A="${mac_a}"
+MAC_B="${mac_b}"
 
 # Wait briefly for both interfaces to be ready
 sleep 1
 
+DEV_A=\$(find_if_by_mac "\$MAC_A") || exit 0
+DEV_B=\$(find_if_by_mac "\$MAC_B") || exit 0
+
 # ECMP routes for fabric prefixes
 ip route replace 10.0.0.0/8 \\
-    nexthop via ${gw_a} dev ${IF_A} weight 1 \\
-    nexthop via ${gw_b} dev ${IF_B} weight 1 2>/dev/null || true
+    nexthop via ${gw_a} dev \$DEV_A weight 1 \\
+    nexthop via ${gw_b} dev \$DEV_B weight 1 2>/dev/null || true
 ip route replace 172.16.0.0/12 \\
-    nexthop via ${gw_a} dev ${IF_A} weight 1 \\
-    nexthop via ${gw_b} dev ${IF_B} weight 1 2>/dev/null || true
+    nexthop via ${gw_a} dev \$DEV_A weight 1 \\
+    nexthop via ${gw_b} dev \$DEV_B weight 1 2>/dev/null || true
 DISPEOF
 
 # Add default route ECMP if applicable
 if [ "$no_default" != "--no-default-route" ]; then
     cat >> /etc/NetworkManager/dispatcher.d/99-netwatch-ecmp <<DISPEOF
 ip route replace default \\
-    nexthop via ${gw_a} dev ${IF_A} weight 1 \\
-    nexthop via ${gw_b} dev ${IF_B} weight 1 2>/dev/null || true
+    nexthop via ${gw_a} dev \$DEV_A weight 1 \\
+    nexthop via ${gw_b} dev \$DEV_B weight 1 2>/dev/null || true
 DISPEOF
 fi
 

@@ -2,7 +2,6 @@
 ! NetWatch — FRR configuration for {{ hostname }}
 ! Generated from topology.yml — DO NOT HAND-EDIT
 !
-frr version 10.4.1
 frr defaults datacenter
 hostname {{ hostname }}
 log syslog informational
@@ -33,6 +32,15 @@ ip route {{ route.prefix }} {{ route.nexthop }}
 {% endfor %}
 !
 {% endif %}
+! --- Prefix list: deny management subnet from redistribution ---
+ip prefix-list CONNECTED-FILTER seq 5 deny 192.168.0.0/24 le 32
+ip prefix-list CONNECTED-FILTER seq 100 permit 0.0.0.0/0 le 32
+!
+! --- Route map for redistribute filtering ---
+route-map CONNECTED-FILTER permit 10
+ match ip address prefix-list CONNECTED-FILTER
+exit
+!
 ! --- BGP ---
 router bgp {{ asn }}
  bgp router-id {{ router_id }}
@@ -50,7 +58,7 @@ router bgp {{ asn }}
  !
  ! --- IPv4 Unicast ---
  address-family ipv4 unicast
-  redistribute connected
+  redistribute connected route-map CONNECTED-FILTER
 {% if bastion_gateways or server_static_routes %}
   redistribute static
 {% endif %}

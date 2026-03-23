@@ -13,7 +13,11 @@ echo "=== Configuring mgmt VM ==="
 
 # --- Copy generated configs to final locations ----------------------------
 cp /tmp/netwatch-config/prometheus/prometheus.yml /etc/prometheus/
-cp /tmp/netwatch-config/prometheus/alerts.yml /etc/prometheus/
+if [ -f /tmp/netwatch-config/prometheus/alerts.yml ]; then
+    cp /tmp/netwatch-config/prometheus/alerts.yml /etc/prometheus/
+else
+    echo "WARNING: alerts.yml not found — Prometheus will start without alert rules"
+fi
 cp /tmp/netwatch-config/loki/loki-config.yml /etc/loki/
 cp /tmp/netwatch-config/dnsmasq/dnsmasq.conf /etc/dnsmasq.conf
 cp /tmp/netwatch-config/grafana/dashboards/*.json /var/lib/grafana/dashboards/ 2>/dev/null || true
