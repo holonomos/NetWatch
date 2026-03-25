@@ -82,6 +82,13 @@ addressing:
       leaf_server_rack3: "172.16.5.0/24"
       leaf_server_rack4: "172.16.6.0/24"
 
+  services:
+    cidr: "10.100.0.0/24"
+    description: >
+      MetalLB external IP pool. Assigned to k3s LoadBalancer services.
+      Announced as /32 routes via BGP from MetalLB speakers to leaf switches.
+      Reachable from host via: ip route add 10.100.0.0/24 via 192.168.0.2
+
   management:
     cidr: "192.168.0.0/24"
     gateway: "192.168.0.1"

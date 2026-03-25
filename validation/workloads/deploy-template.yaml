@@ -1,0 +1,69 @@
+# ==========================================================================
+# NetWatch — Workload Deployment Template
+# ==========================================================================
+# Edit this file with your container image, then deploy:
+#
+#   kubectl apply -f validation/workloads/deploy-template.yaml
+#
+# Your app will be:
+#   - Spread across racks (anti-affinity)
+#   - Assigned an external IP by MetalLB (accessible from host browser)
+#   - Monitored by Prometheus (visible in Grafana)
+#
+# To check status:   kubectl get pods -o wide
+# To get the IP:     kubectl get svc my-app
+# To access it:      curl http://<EXTERNAL-IP>
+# To tear it down:   kubectl delete -f validation/workloads/deploy-template.yaml
+# ==========================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app                          # ← change this
+spec:
+  replicas: 4                           # ← how many instances (1 per rack = 4)
+  selector:
+    matchLabels:
+      app: my-app                       # ← must match metadata.name above
+  template:
+    metadata:
+      labels:
+        app: my-app                     # ← must match metadata.name above
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - my-app        # ← must match metadata.name above
+                topologyKey: topology.kubernetes.io/zone
+      containers:
+        - name: my-app                  # ← change this
+          image: nginx:alpine           # ← YOUR IMAGE HERE (e.g., ghcr.io/you/your-app:latest)
+          ports:
+            - containerPort: 80         # ← port your app listens on
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app                          # ← must match deployment name
+spec:
+  type: LoadBalancer                    # MetalLB assigns an external IP
+  ports:
+    - port: 80                          # ← external port (what you curl)
+      targetPort: 80                    # ← must match containerPort above
+  selector:
+    app: my-app                         # ← must match deployment labels

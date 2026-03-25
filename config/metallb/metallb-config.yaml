@@ -1,0 +1,127 @@
+# MetalLB BGP Configuration for NetWatch
+# Applied after MetalLB is installed: kubectl apply -f config/metallb/
+#
+# MetalLB speakers on server VMs peer with their rack's leaf switches
+# and announce service IPs as /32 routes via BGP.
+---
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: leaf-1a
+  namespace: metallb-system
+spec:
+  myASN: 65101
+  peerASN: 65101
+  peerAddress: 10.0.3.1
+  nodeSelectors:
+    - matchLabels:
+        topology.kubernetes.io/zone: rack-1
+---
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: leaf-1b
+  namespace: metallb-system
+spec:
+  myASN: 65101
+  peerASN: 65101
+  peerAddress: 10.0.3.2
+  nodeSelectors:
+    - matchLabels:
+        topology.kubernetes.io/zone: rack-1
+---
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: leaf-2a
+  namespace: metallb-system
+spec:
+  myASN: 65102
+  peerASN: 65102
+  peerAddress: 10.0.3.3
+  nodeSelectors:
+    - matchLabels:
+        topology.kubernetes.io/zone: rack-2
+---
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: leaf-2b
+  namespace: metallb-system
+spec:
+  myASN: 65102
+  peerASN: 65102
+  peerAddress: 10.0.3.4
+  nodeSelectors:
+    - matchLabels:
+        topology.kubernetes.io/zone: rack-2
+---
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: leaf-3a
+  namespace: metallb-system
+spec:
+  myASN: 65103
+  peerASN: 65103
+  peerAddress: 10.0.3.5
+  nodeSelectors:
+    - matchLabels:
+        topology.kubernetes.io/zone: rack-3
+---
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: leaf-3b
+  namespace: metallb-system
+spec:
+  myASN: 65103
+  peerASN: 65103
+  peerAddress: 10.0.3.6
+  nodeSelectors:
+    - matchLabels:
+        topology.kubernetes.io/zone: rack-3
+---
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: leaf-4a
+  namespace: metallb-system
+spec:
+  myASN: 65104
+  peerASN: 65104
+  peerAddress: 10.0.3.7
+  nodeSelectors:
+    - matchLabels:
+        topology.kubernetes.io/zone: rack-4
+---
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: leaf-4b
+  namespace: metallb-system
+spec:
+  myASN: 65104
+  peerASN: 65104
+  peerAddress: 10.0.3.8
+  nodeSelectors:
+    - matchLabels:
+        topology.kubernetes.io/zone: rack-4
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: netwatch-services
+  namespace: metallb-system
+spec:
+  addresses:
+    - 10.100.0.0/24
+---
+apiVersion: metallb.io/v1beta1
+kind: BGPAdvertisement
+metadata:
+  name: netwatch-bgp-advert
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - netwatch-services

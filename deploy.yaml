@@ -1,0 +1,184 @@
+# ==========================================================================
+# NetWatch — Nakama Game Server Deployment
+# ==========================================================================
+# Heroic Labs Nakama: real-time multiplayer game server + PostgreSQL.
+#
+# Deploy:   kubectl apply -f deploy.yaml
+# Status:   kubectl get pods -o wide
+# Console:  http://<NAKAMA-IP>:7351  (admin / nakama-netwatch)
+# HTTP API: http://<NAKAMA-IP>:7350
+# gRPC:     <NAKAMA-IP>:7349
+#
+# Get the IP: kubectl get svc nakama
+# Teardown:   kubectl delete -f deploy.yaml
+# ==========================================================================
+
+---
+# PostgreSQL — Nakama's database backend
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/zone: rack-1
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: nakama
+            - name: POSTGRES_PASSWORD
+              value: localdb
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: pgdata
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: postgres
+
+---
+# Nakama Game Server — 4 replicas across racks
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nakama
+  labels:
+    app: nakama
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: nakama
+  template:
+    metadata:
+      labels:
+        app: nakama
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - nakama
+                topologyKey: topology.kubernetes.io/zone
+      initContainers:
+        - name: migrate
+          image: heroiclabs/nakama:3.24.2
+          command:
+            - /nakama/nakama
+            - migrate
+            - up
+            - --database.address
+            - postgres:localdb@postgres:5432/nakama
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+      containers:
+        - name: nakama
+          image: heroiclabs/nakama:3.24.2
+          args:
+            - --database.address
+            - postgres:localdb@postgres:5432/nakama
+            - --socket.server_key
+            - netwatch-dev-key
+            - --session.encryption_key
+            - netwatch-session-encrypt-key-32ch
+            - --session.refresh_encryption_key
+            - netwatch-refresh-encrypt-key-32c
+            - --console.username
+            - admin
+            - --console.password
+            - nakama-netwatch
+            - --console.signing_key
+            - netwatch-console-signing-key-32c
+            - --runtime.http_key
+            - netwatch-runtime-http-key
+            - --logger.level
+            - INFO
+          ports:
+            - containerPort: 7349
+              name: grpc
+            - containerPort: 7350
+              name: http
+            - containerPort: 7351
+              name: console
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 7350
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 7350
+            initialDelaySeconds: 15
+            periodSeconds: 10
+
+---
+# Nakama Service — MetalLB LoadBalancer
+apiVersion: v1
+kind: Service
+metadata:
+  name: nakama
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 7350
+      targetPort: 7350
+      name: http
+    - port: 7349
+      targetPort: 7349
+      name: grpc
+    - port: 7351
+      targetPort: 7351
+      name: console
+  selector:
+    app: nakama

@@ -55,6 +55,16 @@ router bgp {{ asn }}
  neighbor {{ nbr.ip }} description {{ nbr.name }}
  neighbor {{ nbr.ip }} bfd
 {% endfor %}
+{% if metallb_listen_ranges %}
+ !
+ ! --- MetalLB peer-group (dynamic neighbors from k3s server loopbacks) ---
+ neighbor METALLB peer-group
+ neighbor METALLB remote-as external
+ neighbor METALLB ebgp-multihop 2
+{% for range in metallb_listen_ranges %}
+ bgp listen range {{ range }} peer-group METALLB
+{% endfor %}
+{% endif %}
  !
  ! --- IPv4 Unicast ---
  address-family ipv4 unicast
@@ -69,6 +79,9 @@ router bgp {{ asn }}
   neighbor {{ nbr.ip }} allowas-in 1
 {% endif %}
 {% endfor %}
+{% if metallb_listen_ranges %}
+  neighbor METALLB activate
+{% endif %}
  exit-address-family
  !
 {% if evpn_vtep or is_spine %}

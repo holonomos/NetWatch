@@ -290,6 +290,23 @@ def build_frr_context(node: dict, topo: dict, all_nodes: dict = None) -> dict:
                     "server": peer["name"],
                 })
 
+    # For leaf nodes: determine MetalLB listen range for server loopbacks in this rack
+    # MetalLB speakers connect from server loopback IPs (10.0.4-7.x/32)
+    metallb_listen_ranges = []
+    if node["role"] == "leaf" and all_nodes:
+        # Collect unique loopback /24 prefixes for servers peered with this leaf
+        seen_ranges = set()
+        for iface in node["interfaces"]:
+            peer = all_nodes.get(iface["peer"])
+            if peer and peer["role"] == "server" and peer.get("loopback"):
+                # e.g., 10.0.4.1/32 → 10.0.4.0/24
+                lo_ip = peer["loopback"].split("/")[0]
+                octets = lo_ip.split(".")
+                range_prefix = f"{octets[0]}.{octets[1]}.{octets[2]}.0/24"
+                if range_prefix not in seen_ranges:
+                    seen_ranges.add(range_prefix)
+                    metallb_listen_ranges.append(range_prefix)
+
     return {
         "hostname": node["name"],
         "role": node["role"],
@@ -308,6 +325,7 @@ def build_frr_context(node: dict, topo: dict, all_nodes: dict = None) -> dict:
         "is_spine": node["role"] == "spine",
         "bastion_gateways": bastion_gateways,
         "server_static_routes": server_static_routes,
+        "metallb_listen_ranges": metallb_listen_ranges,
     }
 
 

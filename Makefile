@@ -1,5 +1,5 @@
 .PHONY: up down nuke vms vms-halt vms-destroy frr-up frr-down frr-restart \
-       bridges fabric evpn wire status teardown generate dashboard help \
+       bridges fabric evpn wire routes status teardown generate dashboard help \
        chaos-link-down chaos-link-up chaos-flap chaos-latency chaos-loss \
        chaos-partition chaos-kill
 
@@ -7,7 +7,7 @@
 # Full lifecycle
 # ==========================================================================
 
-up: bridges fabric evpn wire status  ## Full fabric bring-up (bridges → FRR → EVPN → servers → verify)
+up: bridges fabric evpn wire routes status  ## Full fabric bring-up (bridges → FRR → EVPN → servers → routes → verify)
 
 down: teardown                       ## Graceful fabric teardown (halts FRR VMs, removes bridges)
 
@@ -71,11 +71,46 @@ evpn:                                ## Step 3: Configure EVPN/VxLAN overlay on 
 wire:                                ## Step 4: Attach NICs + configure IPs on servers + bastion
 	bash scripts/fabric/setup-server-links.sh
 
+routes:                              ## Step 5: Add host routes for fabric + service IPs via bastion
+	@sudo ip route replace 10.0.0.0/8 via 192.168.0.2 2>/dev/null && \
+		echo "  Host route: 10.0.0.0/8 via bastion (fabric loopbacks + k8s API + services)" || \
+		echo "  WARNING: Failed to add host route (need sudo)"
+
 status:                              ## Health check (31 checks)
 	bash scripts/fabric/status.sh
 
 teardown:                            ## Graceful teardown: halt FRR VMs + remove bridges
 	bash scripts/fabric/teardown.sh
+
+# ==========================================================================
+# k3s
+# ==========================================================================
+
+k3s-init:                            ## Bootstrap k3s control plane on srv-1-1
+	bash scripts/k3s/bootstrap-server.sh
+
+k3s-join:                            ## Join remaining 15 servers as k3s agents
+	bash scripts/k3s/join-agents.sh
+
+k3s-kubectl:                         ## Configure kubectl on HOST (operator workstation)
+	bash scripts/k3s/setup-host-kubectl.sh
+
+k3s-cilium:                          ## Install Cilium CNI
+	bash scripts/k3s/install-cilium.sh
+
+k3s-metallb:                         ## Install MetalLB load balancer
+	bash scripts/k3s/install-metallb.sh
+
+k3s-up: routes k3s-init k3s-join k3s-kubectl k3s-cilium k3s-metallb  ## Full k3s cluster (routes + init + join + kubectl + Cilium + MetalLB)
+
+bastion-ops:                         ## Configure bastion as operations desk (aliases, DNAT, SSH config)
+	bash scripts/bastion/setup-ops.sh
+
+bastion-dnat:                        ## Apply/refresh DNAT rules from config/bastion-dnat.conf
+	bash scripts/bastion/apply-dnat.sh
+
+bastion-images:                      ## Distribute container images from images/ to k3s nodes
+	bash scripts/bastion/setup-registry.sh
 
 # ==========================================================================
 # Tools

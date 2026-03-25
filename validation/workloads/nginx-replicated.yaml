@@ -1,0 +1,61 @@
+---
+# NetWatch Validation Workload — nginx replicated across racks
+# Deploys 4 nginx replicas with anti-affinity to spread across racks.
+# Exposed via MetalLB LoadBalancer for external access from host.
+#
+# Deploy: kubectl apply -f validation/workloads/nginx-replicated.yaml
+# Access: curl http://<EXTERNAL-IP>
+# Check:  kubectl get pods -o wide (should show pods in different racks)
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-validation
+  labels:
+    app: nginx-validation
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: nginx-validation
+  template:
+    metadata:
+      labels:
+        app: nginx-validation
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - nginx-validation
+                topologyKey: topology.kubernetes.io/zone
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-validation
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 80
+  selector:
+    app: nginx-validation
