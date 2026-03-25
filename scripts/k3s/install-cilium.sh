@@ -18,7 +18,7 @@
 # ==========================================================================
 set -euo pipefail
 
-SERVER_LOOPBACK="10.0.4.1"
+CONTROL_IP="192.168.0.3"
 KUBECONFIG_FILE="${HOME}/.kube/netwatch-config"
 
 export KUBECONFIG="$KUBECONFIG_FILE"
@@ -36,10 +36,20 @@ kubectl get nodes &>/dev/null || {
     exit 1
 }
 
-# Add Cilium Helm repo
-echo "  Adding Cilium Helm repo..."
-helm repo add cilium https://helm.cilium.io/ 2>/dev/null || true
-helm repo update 2>/dev/null
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$PROJECT_ROOT/repo/versions.env"
+
+# Use local chart if available, otherwise pull from repo
+CHART_PATH="$PROJECT_ROOT/artifacts/cilium-${CILIUM_VERSION}.tgz"
+if [ -f "$CHART_PATH" ]; then
+    CHART_REF="$CHART_PATH"
+    echo "  Using local chart: $CHART_PATH"
+else
+    echo "  Local chart not found, adding Helm repo..."
+    helm repo add cilium https://helm.cilium.io/ 2>/dev/null || true
+    helm repo update 2>/dev/null
+    CHART_REF="cilium/cilium"
+fi
 
 # Check if already installed
 if helm status cilium -n kube-system &>/dev/null; then
@@ -48,12 +58,14 @@ if helm status cilium -n kube-system &>/dev/null; then
     exit 0
 fi
 
-echo "  Installing Cilium..."
-helm install cilium cilium/cilium \
+echo "  Installing Cilium v${CILIUM_VERSION}..."
+helm install cilium "$CHART_REF" \
+    --version "${CILIUM_VERSION}" \
     --namespace kube-system \
-    --set tunnel=vxlan \
+    --set routingMode=tunnel \
+    --set tunnelProtocol=vxlan \
     --set ipam.mode=kubernetes \
-    --set k8sServiceHost=${SERVER_LOOPBACK} \
+    --set k8sServiceHost=${CONTROL_IP} \
     --set k8sServicePort=6443 \
     --set bpf.masquerade=true \
     --set hubble.enabled=false \
@@ -78,7 +90,7 @@ echo "=== Cilium CNI Installed ==="
 echo "  Tunnel mode: VxLAN"
 echo "  IPAM: Kubernetes"
 echo "  Masquerade: BPF"
-echo "  API server: ${SERVER_LOOPBACK}:6443"
+echo "  API server: ${CONTROL_IP}:6443"
 echo ""
 echo "  Verify pod networking:"
 echo "    kubectl run test-1 --image=busybox --overrides='{\"spec\":{\"nodeSelector\":{\"topology.kubernetes.io/zone\":\"rack-1\"}}}' -- sleep 3600"

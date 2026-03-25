@@ -7,7 +7,13 @@
 # Full lifecycle
 # ==========================================================================
 
-up: bridges fabric evpn wire routes status  ## Full fabric bring-up (bridges → FRR → EVPN → servers → routes → verify)
+up: hostfix bridges fabric evpn wire routes status  ## Full bring-up (hostfix → bridges → FRR → EVPN → servers → routes → verify)
+
+hostfix:                             ## Step 0: Fix Docker nftables FORWARD DROP (blocks inter-VM traffic)
+	@for br in $$(ip link show type bridge 2>/dev/null | grep -oP 'virbr\d+' | sort -u); do \
+		sudo nft insert rule ip filter FORWARD iifname "$$br" accept 2>/dev/null || true; \
+		sudo nft insert rule ip filter FORWARD oifname "$$br" accept 2>/dev/null || true; \
+	done; echo "  Host nft FORWARD rules applied for all virbr bridges (Docker conflict fix)"
 
 down: teardown                       ## Graceful fabric teardown (halts FRR VMs, removes bridges)
 
@@ -18,9 +24,11 @@ nuke:                                ## Nuclear: remove bridges, detach NICs, cl
 # VMs
 # ==========================================================================
 
-vms:                                 ## Boot all 30 VMs in correct order (mgmt → FRR → bastion → servers)
+vms:                                 ## Boot all 31 VMs in correct order (obs → mgmt → FRR → bastion → servers)
+	vagrant up obs
+	@echo "Waiting for obs services (DNS, NTP, monitoring)..." && sleep 5
 	vagrant up mgmt
-	@echo "Waiting for mgmt services to start..." && sleep 5
+	@echo "Waiting for mgmt (k3s control plane)..." && sleep 5
 	vagrant up border-1 border-2 spine-1 spine-2 \
 	         leaf-1a leaf-1b leaf-2a leaf-2b \
 	         leaf-3a leaf-3b leaf-4a leaf-4b
@@ -86,7 +94,7 @@ teardown:                            ## Graceful teardown: halt FRR VMs + remove
 # k3s
 # ==========================================================================
 
-k3s-init:                            ## Bootstrap k3s control plane on srv-1-1
+k3s-init:                            ## Bootstrap k3s control plane on mgmt (OOB, chaos-proof)
 	bash scripts/k3s/bootstrap-server.sh
 
 k3s-join:                            ## Join remaining 15 servers as k3s agents
@@ -101,7 +109,10 @@ k3s-cilium:                          ## Install Cilium CNI
 k3s-metallb:                         ## Install MetalLB load balancer
 	bash scripts/k3s/install-metallb.sh
 
-k3s-up: routes k3s-init k3s-join k3s-kubectl k3s-cilium k3s-metallb  ## Full k3s cluster (routes + init + join + kubectl + Cilium + MetalLB)
+k3s-images:                          ## Import pre-bundled container images to all k3s nodes
+	bash scripts/k3s/import-images.sh
+
+k3s-up: hostfix routes k3s-init k3s-join k3s-images k3s-kubectl k3s-cilium k3s-metallb  ## Full k3s cluster
 
 bastion-ops:                         ## Configure bastion as operations desk (aliases, DNAT, SSH config)
 	bash scripts/bastion/setup-ops.sh
@@ -119,8 +130,8 @@ bastion-images:                      ## Distribute container images from images/
 generate:                            ## Regenerate all configs from topology.yml
 	python3 generator/generate.py
 
-dashboard:                           ## SSH tunnel to Grafana/Prometheus/Loki
-	vagrant ssh mgmt -- -L 3000:localhost:3000 -L 9090:localhost:9090 -L 3100:localhost:3100
+dashboard:                           ## SSH tunnel to Grafana/Prometheus/Loki (on obs VM)
+	vagrant ssh obs -- -L 3000:localhost:3000 -L 9090:localhost:9090 -L 3100:localhost:3100
 
 # ==========================================================================
 # Chaos

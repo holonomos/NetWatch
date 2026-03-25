@@ -97,7 +97,7 @@ addressing:
 # ============================================================================
 # NODES
 # ============================================================================
-# 30 total: 12 FRR VMs + 16 server VMs + 1 bastion VM + 1 mgmt VM
+# 31 total: 12 FRR VMs + 16 server VMs + 1 bastion VM + 1 mgmt VM + 1 obs VM
 # All VMs use the netwatch-golden box (Fedora Cloud + FRR 10.4.1). No Docker.
 #
 # Convention:

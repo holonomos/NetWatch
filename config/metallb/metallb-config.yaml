@@ -3,6 +3,7 @@
 #
 # MetalLB speakers on server VMs peer with their rack's leaf switches
 # and announce service IPs as /32 routes via BGP.
+# MetalLB ASN: 65200 (dedicated, distinct from all leaf ASNs 65101-65104)
 ---
 apiVersion: metallb.io/v1beta2
 kind: BGPPeer
@@ -10,7 +11,7 @@ metadata:
   name: leaf-1a
   namespace: metallb-system
 spec:
-  myASN: 65101
+  myASN: 65200
   peerASN: 65101
   peerAddress: 10.0.3.1
   nodeSelectors:
@@ -23,7 +24,7 @@ metadata:
   name: leaf-1b
   namespace: metallb-system
 spec:
-  myASN: 65101
+  myASN: 65200
   peerASN: 65101
   peerAddress: 10.0.3.2
   nodeSelectors:
@@ -36,7 +37,7 @@ metadata:
   name: leaf-2a
   namespace: metallb-system
 spec:
-  myASN: 65102
+  myASN: 65200
   peerASN: 65102
   peerAddress: 10.0.3.3
   nodeSelectors:
@@ -49,7 +50,7 @@ metadata:
   name: leaf-2b
   namespace: metallb-system
 spec:
-  myASN: 65102
+  myASN: 65200
   peerASN: 65102
   peerAddress: 10.0.3.4
   nodeSelectors:
@@ -62,7 +63,7 @@ metadata:
   name: leaf-3a
   namespace: metallb-system
 spec:
-  myASN: 65103
+  myASN: 65200
   peerASN: 65103
   peerAddress: 10.0.3.5
   nodeSelectors:
@@ -75,7 +76,7 @@ metadata:
   name: leaf-3b
   namespace: metallb-system
 spec:
-  myASN: 65103
+  myASN: 65200
   peerASN: 65103
   peerAddress: 10.0.3.6
   nodeSelectors:
@@ -88,7 +89,7 @@ metadata:
   name: leaf-4a
   namespace: metallb-system
 spec:
-  myASN: 65104
+  myASN: 65200
   peerASN: 65104
   peerAddress: 10.0.3.7
   nodeSelectors:
@@ -101,7 +102,7 @@ metadata:
   name: leaf-4b
   namespace: metallb-system
 spec:
-  myASN: 65104
+  myASN: 65200
   peerASN: 65104
   peerAddress: 10.0.3.8
   nodeSelectors:

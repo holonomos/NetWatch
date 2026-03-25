@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==========================================================================
-# provision-mgmt.sh — Configure the management VM
+# provision-obs.sh — Configure the observability VM
 # ==========================================================================
 # Called by Vagrant provisioner. Everything is pre-installed in the golden
 # image — this script only writes config files and enables services.
@@ -9,7 +9,7 @@
 # ==========================================================================
 set -euo pipefail
 
-echo "=== Configuring mgmt VM ==="
+echo "=== Configuring obs VM ==="
 
 # --- Copy generated configs to final locations ----------------------------
 cp /tmp/netwatch-config/prometheus/prometheus.yml /etc/prometheus/

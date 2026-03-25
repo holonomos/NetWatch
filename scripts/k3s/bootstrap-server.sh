@@ -1,61 +1,60 @@
 #!/usr/bin/env bash
 # ==========================================================================
-# bootstrap-server.sh — Initialize k3s control plane on srv-1-1
+# bootstrap-server.sh — Initialize k3s control plane on mgmt VM
 # ==========================================================================
-# Starts k3s server with fabric-routed networking:
-#   - Binds to server loopback IP (reachable via Clos fabric)
-#   - Disables Flannel (Cilium handles CNI)
-#   - Disables Traefik (MetalLB handles ingress)
-#   - Outputs join token for agents
+# The control plane runs on mgmt (OOB network) so it survives all chaos
+# scenarios. Chaos scripts target the fabric bridges — mgmt is untouched.
+#
+# Agents connect to the API via the mgmt bridge (192.168.0.3:6443).
+# kubectl from host connects directly (host is on the mgmt bridge).
 #
 # Run from host: bash scripts/k3s/bootstrap-server.sh
 # ==========================================================================
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-
-SERVER_VM="srv-1-1"
-SERVER_LOOPBACK="10.0.4.1"
+CONTROL_VM="mgmt"
+CONTROL_IP="192.168.0.3"
 
 echo "========================================"
 echo " NetWatch: k3s Control Plane Bootstrap"
 echo "========================================"
-echo "  Server: $SERVER_VM"
-echo "  Bind:   $SERVER_LOOPBACK"
+echo "  Server: $CONTROL_VM (OOB — chaos-proof)"
+echo "  Bind:   $CONTROL_IP"
 echo ""
 
-# Check if k3s is already running
-if vagrant ssh "$SERVER_VM" -c "systemctl is-active k3s 2>/dev/null" 2>/dev/null | grep -q "^active$"; then
-    echo "k3s is already running on $SERVER_VM"
+# Check if already running
+if vagrant ssh "$CONTROL_VM" -- -T "sudo systemctl is-active k3s 2>/dev/null" 2>/dev/null | grep -q "^active$"; then
+    echo "k3s is already running on $CONTROL_VM"
     echo ""
     echo "Join token:"
-    vagrant ssh "$SERVER_VM" -c "sudo cat /var/lib/rancher/k3s/server/node-token" 2>/dev/null
+    vagrant ssh "$CONTROL_VM" -- -T "sudo cat /var/lib/rancher/k3s/server/node-token" 2>/dev/null | tr -d '[:cntrl:]'
     echo ""
-    echo "Kubeconfig:"
-    echo "  vagrant ssh $SERVER_VM -c 'sudo cat /etc/rancher/k3s/k3s.yaml'"
     exit 0
 fi
 
-echo "Starting k3s server on $SERVER_VM..."
-vagrant ssh "$SERVER_VM" -c "sudo bash -s" <<BOOTSTRAP
+echo "Creating k3s systemd service on $CONTROL_VM..."
+vagrant ssh "$CONTROL_VM" -- -T "sudo bash -s" <<BOOTSTRAP
 set -e
 
-# k3s server with fabric networking
-k3s server \
-    --bind-address ${SERVER_LOOPBACK} \
-    --advertise-address ${SERVER_LOOPBACK} \
-    --node-ip ${SERVER_LOOPBACK} \
-    --node-external-ip ${SERVER_LOOPBACK} \
-    --flannel-backend=none \
-    --disable-network-policy \
-    --disable=traefik \
-    --disable=servicelb \
-    --cluster-cidr=10.42.0.0/16 \
-    --service-cidr=10.43.0.0/16 \
-    --write-kubeconfig-mode=644 \
-    &
+# Create systemd unit
+cat > /etc/systemd/system/k3s.service <<EOF
+[Unit]
+Description=k3s server
+After=network.target
 
-# Wait for k3s to be ready
+[Service]
+ExecStart=/usr/local/bin/k3s server --bind-address ${CONTROL_IP} --advertise-address ${CONTROL_IP} --node-ip ${CONTROL_IP} --node-external-ip ${CONTROL_IP} --flannel-backend=none --disable-network-policy --disable=traefik --disable=servicelb --cluster-cidr=10.42.0.0/16 --service-cidr=10.43.0.0/16 --write-kubeconfig-mode=644
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now k3s
+
+# Wait for API server
 echo "  Waiting for k3s API server..."
 for i in \$(seq 1 60); do
     if k3s kubectl get nodes &>/dev/null; then
@@ -65,20 +64,13 @@ for i in \$(seq 1 60); do
     sleep 2
 done
 
-# Label this node with rack topology
-RACK=\$(cat /etc/netwatch-rack 2>/dev/null || echo "rack-1")
-k3s kubectl label node ${SERVER_VM} topology.kubernetes.io/zone=\${RACK} --overwrite
-
-echo ""
-echo "  Control plane running on ${SERVER_LOOPBACK}:6443"
+echo "  Control plane running on ${CONTROL_IP}:6443"
 BOOTSTRAP
 
 echo ""
 echo "=== k3s Control Plane Ready ==="
 echo ""
-
-# Get and display join token
 echo "Join token:"
-vagrant ssh "$SERVER_VM" -c "sudo cat /var/lib/rancher/k3s/server/node-token" 2>/dev/null
+vagrant ssh "$CONTROL_VM" -- -T "sudo cat /var/lib/rancher/k3s/server/node-token" 2>/dev/null | tr -d '[:cntrl:]'
 echo ""
 echo "Next: bash scripts/k3s/join-agents.sh"

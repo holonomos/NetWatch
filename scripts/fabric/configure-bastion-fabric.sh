@@ -48,12 +48,21 @@ ip addr add "${ip_b}/${prefix}" dev "$IF_B"
 ip link set "$IF_B" up
 
 # ECMP routes for fabric prefixes (no default route — bastion keeps its own)
-ip route replace 10.0.0.0/8 \
-    nexthop via "${gw_a}" dev "$IF_A" weight 1 \
-    nexthop via "${gw_b}" dev "$IF_B" weight 1
-ip route replace 172.16.0.0/12 \
-    nexthop via "${gw_a}" dev "$IF_A" weight 1 \
-    nexthop via "${gw_b}" dev "$IF_B" weight 1
+# Retry up to 5 times — nexthop ARP resolution may fail if borders haven't
+# responded yet on newly-attached interfaces.
+for attempt in $(seq 1 5); do
+    if ip route replace 10.0.0.0/8 \
+        nexthop via "${gw_a}" dev "$IF_A" weight 1 \
+        nexthop via "${gw_b}" dev "$IF_B" weight 1 2>/dev/null && \
+       ip route replace 172.16.0.0/12 \
+        nexthop via "${gw_a}" dev "$IF_A" weight 1 \
+        nexthop via "${gw_b}" dev "$IF_B" weight 1 2>/dev/null; then
+        echo "  ECMP routes applied (attempt $attempt)"
+        break
+    fi
+    echo "  Route apply failed (attempt $attempt/5) — waiting for ARP..."
+    sleep 2
+done
 
 echo "  $IF_A = ${ip_a}/${prefix} -> gw ${gw_a}"
 echo "  $IF_B = ${ip_b}/${prefix} -> gw ${gw_b}"

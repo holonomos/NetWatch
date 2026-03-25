@@ -35,18 +35,29 @@ kubectl get nodes &>/dev/null || {
     exit 1
 }
 
-# Add MetalLB Helm repo
-echo "  Adding MetalLB Helm repo..."
-helm repo add metallb https://metallb.github.io/metallb 2>/dev/null || true
-helm repo update 2>/dev/null
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$PROJECT_ROOT/repo/versions.env"
+
+# Use local chart if available, otherwise pull from repo
+CHART_PATH="$PROJECT_ROOT/artifacts/metallb-${METALLB_VERSION}.tgz"
+if [ -f "$CHART_PATH" ]; then
+    CHART_REF="$CHART_PATH"
+    echo "  Using local chart: $CHART_PATH"
+else
+    echo "  Local chart not found, adding Helm repo..."
+    helm repo add metallb https://metallb.github.io/metallb 2>/dev/null || true
+    helm repo update 2>/dev/null
+    CHART_REF="metallb/metallb"
+fi
 
 # Check if already installed
 if helm status metallb -n metallb-system &>/dev/null; then
     echo "  MetalLB is already installed"
     kubectl get pods -n metallb-system
 else
-    echo "  Installing MetalLB via Helm..."
-    helm install metallb metallb/metallb \
+    echo "  Installing MetalLB v${METALLB_VERSION}..."
+    helm install metallb "$CHART_REF" \
+        --version "${METALLB_VERSION}" \
         --namespace metallb-system \
         --create-namespace \
         --wait \

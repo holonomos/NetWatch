@@ -1,5 +1,6 @@
 .claude/
 generated/
+artifacts/
 repo/fedora/
 repo/binaries/
 repo/.serve.pid

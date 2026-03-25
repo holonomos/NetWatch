@@ -36,7 +36,7 @@ Vagrant.configure("2") do |config|
     # DNS — point at mgmt VM (dnsmasq)
     rm -f /etc/resolv.conf
     cat > /etc/resolv.conf <<DNSEOF
-    nameserver 192.168.0.3
+    nameserver 192.168.0.4
     search netwatch.lab
     DNSEOF
 
@@ -75,7 +75,7 @@ Vagrant.configure("2") do |config|
   COMMON_CLIENT = <<~SHELL
     # Chrony — NTP client, sync from mgmt
     cat > /etc/chrony.conf <<CHEOF
-    server 192.168.0.3 iburst
+    server 192.168.0.4 iburst
     stratumweight 0
     driftfile /var/lib/chrony/drift
     rtcsync
@@ -85,7 +85,7 @@ Vagrant.configure("2") do |config|
 
     # Rsyslog — forward to Loki on mgmt
     cat > /etc/rsyslog.d/99-netwatch-forward.conf <<RSEOF
-    *.* @@192.168.0.3:514
+    *.* @@192.168.0.4:514
     RSEOF
     systemctl enable --now rsyslog
   SHELL
@@ -123,7 +123,40 @@ Vagrant.configure("2") do |config|
   SHELL
 
   # ========================================================================
-  # Management VM — observability, DNS, NTP (define first for boot order)
+  # Observability VM — Prometheus, Grafana, Loki, dnsmasq, chrony (boot first)
+  # ========================================================================
+  config.vm.define "obs" do |node|
+    node.vm.hostname = "obs"
+
+    node.vm.provider :libvirt do |lv|
+      lv.memory = 2048
+      lv.cpus = 2
+    end
+
+    node.vm.network :private_network,
+      ip: "192.168.0.4",
+      libvirt__network_name: "netwatch-mgmt",
+      libvirt__dhcp_enabled: true,
+      libvirt__forward_mode: "none"
+
+    node.vm.synced_folder "generated/prometheus", "/tmp/netwatch-config/prometheus", type: "rsync"
+    node.vm.synced_folder "generated/loki", "/tmp/netwatch-config/loki", type: "rsync"
+    node.vm.synced_folder "generated/grafana", "/tmp/netwatch-config/grafana", type: "rsync"
+    node.vm.synced_folder "generated/dnsmasq", "/tmp/netwatch-config/dnsmasq", type: "rsync"
+
+    node.vm.provision "shell", inline: <<-SH
+      set -e
+      #{COMMON_BASE}
+
+      # Static IP
+      ip addr add 192.168.0.4/24 dev ens5 2>/dev/null || true
+    SH
+
+    node.vm.provision "shell", path: "scripts/provision-obs.sh"
+  end
+
+  # ========================================================================
+  # Management VM — k3s control plane (chaos-proof, OOB)
   # ========================================================================
   config.vm.define "mgmt" do |node|
     node.vm.hostname = "mgmt"
@@ -139,20 +172,17 @@ Vagrant.configure("2") do |config|
       libvirt__dhcp_enabled: true,
       libvirt__forward_mode: "none"
 
-    node.vm.synced_folder "generated/prometheus", "/tmp/netwatch-config/prometheus", type: "rsync"
-    node.vm.synced_folder "generated/loki", "/tmp/netwatch-config/loki", type: "rsync"
-    node.vm.synced_folder "generated/grafana", "/tmp/netwatch-config/grafana", type: "rsync"
-    node.vm.synced_folder "generated/dnsmasq", "/tmp/netwatch-config/dnsmasq", type: "rsync"
-
     node.vm.provision "shell", inline: <<-SH
       set -e
       #{COMMON_BASE}
+      #{COMMON_CLIENT}
 
-      # Static IP (Vagrant can't reconfigure the NIC it SSH'd in on)
+      # Static IP
       ip addr add 192.168.0.3/24 dev ens5 2>/dev/null || true
-    SH
 
-    node.vm.provision "shell", path: "scripts/provision-mgmt.sh"
+      # Default route via bastion (for internet access if needed)
+      ip route add default via 192.168.0.2 2>/dev/null || true
+    SH
   end
 
   # ========================================================================
@@ -257,12 +287,12 @@ Vagrant.configure("2") do |config|
   # k3s pre-installed but disabled — cluster formation happens at P7.
   # Data-plane interfaces wired post-boot by scripts/fabric/setup-server-links.sh
   # ========================================================================
-  def define_server(config, name, rack, mgmt_ip)
+  def define_server(config, name, rack, mgmt_ip, memory: 768)
     config.vm.define name do |node|
       node.vm.hostname = name
 
       node.vm.provider :libvirt do |lv|
-        lv.memory = 768
+        lv.memory = memory
         lv.cpus = 1
       end
 
