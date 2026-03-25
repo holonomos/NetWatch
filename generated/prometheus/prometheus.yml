@@ -85,10 +85,6 @@ scrape_configs:
         labels:
           instance: 'mgmt'
           role: 'mgmt'
-      - targets: ['192.168.0.4:9100']
-        labels:
-          instance: 'obs'
-          role: 'obs'
       - targets: ['192.168.0.50:9100']
         labels:
           instance: 'srv-1-1'

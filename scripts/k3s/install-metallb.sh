@@ -16,6 +16,7 @@
 # ==========================================================================
 set -euo pipefail
 
+METALLB_WAIT_TIMEOUT="600s"
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 METALLB_CONFIG="$PROJECT_ROOT/config/metallb/metallb-config.yaml"
 KUBECONFIG_FILE="${HOME}/.kube/netwatch-config"
@@ -23,9 +24,64 @@ KUBECONFIG_FILE="${HOME}/.kube/netwatch-config"
 # Use NetWatch kubeconfig
 export KUBECONFIG="$KUBECONFIG_FILE"
 
+require_cmd() {
+    local cmd="$1"
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "ERROR: Required command not found: $cmd"
+        exit 1
+    fi
+}
+
+preload_images_for_metallb() {
+    local import_script="$PROJECT_ROOT/scripts/k3s/import-images.sh"
+
+    if [ "${SKIP_IMAGE_IMPORT:-0}" = "1" ]; then
+        echo "  SKIP_IMAGE_IMPORT=1 set, skipping image preload"
+        return 0
+    fi
+
+    if [ ! -f "$import_script" ]; then
+        echo "ERROR: Missing import helper: $import_script"
+        exit 1
+    fi
+
+    echo "  Preloading MetalLB images to all k3s nodes..."
+    bash "$import_script" metallb-images.tar
+}
+
+verify_metallb_ready() {
+    local timeout="$1"
+    local desired
+    local ready
+
+    echo "  Verifying MetalLB controller rollout..."
+    kubectl -n metallb-system rollout status deployment/metallb-controller --timeout="$timeout"
+
+    echo "  Verifying MetalLB speaker rollout..."
+    kubectl -n metallb-system rollout status daemonset/metallb-speaker --timeout="$timeout"
+
+    desired=$(kubectl -n metallb-system get daemonset metallb-speaker -o jsonpath='{.status.desiredNumberScheduled}')
+    ready=$(kubectl -n metallb-system get daemonset metallb-speaker -o jsonpath='{.status.numberReady}')
+    if [ "$desired" -ne "$ready" ]; then
+        echo "ERROR: MetalLB speaker DaemonSet is not fully ready ($ready/$desired)"
+        return 1
+    fi
+}
+
 echo "========================================"
 echo " NetWatch: MetalLB Installation"
 echo "========================================"
+
+# Verify required tooling and config
+require_cmd kubectl
+require_cmd helm
+if [ "${SKIP_IMAGE_IMPORT:-0}" != "1" ]; then
+    require_cmd vagrant
+fi
+if [ ! -f "$METALLB_CONFIG" ]; then
+    echo "ERROR: Missing MetalLB config: $METALLB_CONFIG"
+    exit 1
+fi
 
 # Verify cluster access
 echo "  Verifying cluster access..."
@@ -34,42 +90,37 @@ kubectl get nodes &>/dev/null || {
     echo "  Run: make k3s-init && bash scripts/k3s/setup-host-kubectl.sh"
     exit 1
 }
-
-PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$PROJECT_ROOT/repo/versions.env"
+
+preload_images_for_metallb
 
 # Use local chart if available, otherwise pull from repo
 CHART_PATH="$PROJECT_ROOT/artifacts/metallb-${METALLB_VERSION}.tgz"
+HELM_VERSION_ARG=()
 if [ -f "$CHART_PATH" ]; then
     CHART_REF="$CHART_PATH"
     echo "  Using local chart: $CHART_PATH"
 else
-    echo "  Local chart not found, adding Helm repo..."
-    helm repo add metallb https://metallb.github.io/metallb 2>/dev/null || true
-    helm repo update 2>/dev/null
+    echo "  Local chart not found; using Helm repo chart..."
+    if helm repo add metallb https://metallb.github.io/metallb >/dev/null 2>&1; then
+        echo "  Added Helm repo: metallb"
+    else
+        echo "  Helm repo 'metallb' already exists (or add was skipped)"
+    fi
+    helm repo update metallb
     CHART_REF="metallb/metallb"
+    HELM_VERSION_ARG=(--version "${METALLB_VERSION}")
 fi
 
-# Check if already installed
-if helm status metallb -n metallb-system &>/dev/null; then
-    echo "  MetalLB is already installed"
-    kubectl get pods -n metallb-system
-else
-    echo "  Installing MetalLB v${METALLB_VERSION}..."
-    helm install metallb "$CHART_REF" \
-        --version "${METALLB_VERSION}" \
-        --namespace metallb-system \
-        --create-namespace \
-        --wait \
-        --timeout 300s
-fi
+echo "  Installing/upgrading MetalLB v${METALLB_VERSION}..."
+helm upgrade --install metallb "$CHART_REF" \
+    "${HELM_VERSION_ARG[@]}" \
+    --namespace metallb-system \
+    --create-namespace \
+    --wait \
+    --timeout "$METALLB_WAIT_TIMEOUT"
 
-# Wait for controller
-echo "  Waiting for MetalLB controller..."
-kubectl wait --namespace metallb-system \
-    --for=condition=ready pod \
-    --selector=app.kubernetes.io/component=controller \
-    --timeout=120s 2>/dev/null || echo "  (still starting — may need a moment)"
+verify_metallb_ready "$METALLB_WAIT_TIMEOUT"
 
 # Apply BGP configuration
 echo "  Applying BGP configuration..."

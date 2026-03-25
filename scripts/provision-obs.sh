@@ -50,7 +50,7 @@ scrape_configs:
       path: /var/log/journal
       labels:
         job: systemd-journal
-        host: mgmt
+        host: obs
     relabel_configs:
       - source_labels: ['__journal__systemd_unit']
         target_label: 'unit'
@@ -62,7 +62,7 @@ scrape_configs:
           - localhost
         labels:
           job: remote-syslog
-          host: mgmt
+          host: obs
           __path__: /var/log/remote.log
 EOF
 

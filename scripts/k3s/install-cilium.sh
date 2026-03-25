@@ -20,12 +20,66 @@ set -euo pipefail
 
 CONTROL_IP="192.168.0.3"
 KUBECONFIG_FILE="${HOME}/.kube/netwatch-config"
+CILIUM_WAIT_TIMEOUT="600s"
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 export KUBECONFIG="$KUBECONFIG_FILE"
+
+require_cmd() {
+    local cmd="$1"
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "ERROR: Required command not found: $cmd"
+        exit 1
+    fi
+}
+
+verify_cilium_ready() {
+    local timeout="$1"
+    local desired
+    local ready
+
+    echo "  Verifying Cilium DaemonSet rollout..."
+    kubectl -n kube-system rollout status daemonset/cilium --timeout="$timeout"
+
+    echo "  Verifying Cilium operator rollout..."
+    kubectl -n kube-system rollout status deployment/cilium-operator --timeout="$timeout"
+
+    desired=$(kubectl -n kube-system get daemonset cilium -o jsonpath='{.status.desiredNumberScheduled}')
+    ready=$(kubectl -n kube-system get daemonset cilium -o jsonpath='{.status.numberReady}')
+
+    if [ "$desired" -ne "$ready" ]; then
+        echo "ERROR: Cilium DaemonSet is not fully ready ($ready/$desired)"
+        return 1
+    fi
+}
+
+preload_images_for_cilium() {
+    local import_script="$PROJECT_ROOT/scripts/k3s/import-images.sh"
+
+    if [ "${SKIP_IMAGE_IMPORT:-0}" = "1" ]; then
+        echo "  SKIP_IMAGE_IMPORT=1 set, skipping image preload"
+        return 0
+    fi
+
+    if [ ! -f "$import_script" ]; then
+        echo "ERROR: Missing import helper: $import_script"
+        exit 1
+    fi
+
+    echo "  Preloading Cilium images to all k3s nodes..."
+    bash "$import_script" cilium-images.tar k3s-system-images.tar
+}
 
 echo "========================================"
 echo " NetWatch: Cilium CNI Installation"
 echo "========================================"
+
+# Verify required tooling
+require_cmd kubectl
+require_cmd helm
+if [ "${SKIP_IMAGE_IMPORT:-0}" != "1" ]; then
+    require_cmd vagrant
+fi
 
 # Verify cluster access from host
 echo "  Verifying cluster access..."
@@ -36,31 +90,31 @@ kubectl get nodes &>/dev/null || {
     exit 1
 }
 
-PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$PROJECT_ROOT/repo/versions.env"
+
+preload_images_for_cilium
 
 # Use local chart if available, otherwise pull from repo
 CHART_PATH="$PROJECT_ROOT/artifacts/cilium-${CILIUM_VERSION}.tgz"
+HELM_VERSION_ARG=()
 if [ -f "$CHART_PATH" ]; then
     CHART_REF="$CHART_PATH"
     echo "  Using local chart: $CHART_PATH"
 else
-    echo "  Local chart not found, adding Helm repo..."
-    helm repo add cilium https://helm.cilium.io/ 2>/dev/null || true
-    helm repo update 2>/dev/null
+    echo "  Local chart not found; using Helm repo chart..."
+    if helm repo add cilium https://helm.cilium.io/ >/dev/null 2>&1; then
+        echo "  Added Helm repo: cilium"
+    else
+        echo "  Helm repo 'cilium' already exists (or add was skipped)"
+    fi
+    helm repo update cilium
     CHART_REF="cilium/cilium"
+    HELM_VERSION_ARG=(--version "${CILIUM_VERSION}")
 fi
 
-# Check if already installed
-if helm status cilium -n kube-system &>/dev/null; then
-    echo "  Cilium is already installed"
-    cilium status 2>/dev/null || kubectl -n kube-system get pods -l k8s-app=cilium
-    exit 0
-fi
-
-echo "  Installing Cilium v${CILIUM_VERSION}..."
-helm install cilium "$CHART_REF" \
-    --version "${CILIUM_VERSION}" \
+echo "  Installing/upgrading Cilium v${CILIUM_VERSION}..."
+helm upgrade --install cilium "$CHART_REF" \
+    "${HELM_VERSION_ARG[@]}" \
     --namespace kube-system \
     --set routingMode=tunnel \
     --set tunnelProtocol=vxlan \
@@ -70,16 +124,25 @@ helm install cilium "$CHART_REF" \
     --set bpf.masquerade=true \
     --set hubble.enabled=false \
     --set operator.replicas=1 \
+    --set image.useDigest=false \
+    --set operator.image.useDigest=false \
+    --set envoy.image.useDigest=false \
     --wait \
-    --timeout 300s
+    --timeout "$CILIUM_WAIT_TIMEOUT"
 
 echo ""
-echo "  Waiting for Cilium agents to be ready..."
-sleep 10
+verify_cilium_ready "$CILIUM_WAIT_TIMEOUT"
 
 echo ""
 echo "=== Cilium Status ==="
-cilium status 2>/dev/null || kubectl -n kube-system get pods -l k8s-app=cilium
+if command -v cilium >/dev/null 2>&1; then
+    if ! cilium status; then
+        echo "  WARNING: cilium CLI status failed; showing pod state instead"
+        kubectl -n kube-system get pods -l k8s-app=cilium
+    fi
+else
+    kubectl -n kube-system get pods -l k8s-app=cilium
+fi
 
 echo ""
 echo "=== Node Status ==="

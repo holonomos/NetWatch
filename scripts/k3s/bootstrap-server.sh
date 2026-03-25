@@ -33,7 +33,7 @@ if vagrant ssh "$CONTROL_VM" -- -T "sudo systemctl is-active k3s 2>/dev/null" 2>
 fi
 
 echo "Creating k3s systemd service on $CONTROL_VM..."
-vagrant ssh "$CONTROL_VM" -- -T "sudo bash -s" <<BOOTSTRAP
+vagrant ssh "$CONTROL_VM" -c "sudo bash -s" <<BOOTSTRAP
 set -e
 
 # Create systemd unit

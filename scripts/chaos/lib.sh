@@ -13,7 +13,7 @@
 #   require_args()    — argument count validation
 
 # --- Configuration ---
-GRAFANA_URL="${GRAFANA_URL:-http://192.168.0.3:3000}"
+GRAFANA_URL="${GRAFANA_URL:-http://192.168.0.4:3000}"
 GRAFANA_USER="${GRAFANA_USER:-admin}"
 GRAFANA_PASS="${GRAFANA_PASS:-admin}"
 VIRSH_PREFIX="NetWatch"

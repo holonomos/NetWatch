@@ -48,7 +48,7 @@ ALIASES
 
 # SSH config for passwordless jump to all nodes
 cat > /home/vagrant/.ssh/config <<'SSHCONF'
-Host srv-* leaf-* spine-* border-* mgmt
+Host srv-* leaf-* spine-* border-* mgmt obs
     StrictHostKeyChecking no
     UserKnownHostsFile /dev/null
     LogLevel ERROR
@@ -69,8 +69,8 @@ echo ""
 echo "=== Bastion Operations Desk Ready ==="
 echo ""
 echo "  SSH in:    vagrant ssh bastion"
-echo "  Grafana:    http://192.168.0.3:3000  (admin/admin)"
-echo "  Prometheus: http://192.168.0.3:9090"
+echo "  Grafana:    http://192.168.0.4:3000  (admin/admin)"
+echo "  Prometheus: http://192.168.0.4:9090"
 echo ""
 echo "  From HOST (operator workstation):"
 echo "    kubectl get nodes     → cluster status"

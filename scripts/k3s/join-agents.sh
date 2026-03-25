@@ -7,11 +7,14 @@
 #
 # Run from host: bash scripts/k3s/join-agents.sh
 # ==========================================================================
-set -uo pipefail
+set -euo pipefail
 
 CONTROL_VM="mgmt"
 CONTROL_IP="192.168.0.3"
 K3S_URL="https://${CONTROL_IP}:6443"
+EXPECTED_TOTAL_NODES=17
+READY_WAIT_SECONDS=180
+READY_POLL_SECONDS=5
 
 echo "========================================"
 echo " NetWatch: k3s Agent Join"
@@ -21,7 +24,9 @@ echo ""
 
 # Get join token (PTY disabled, control chars stripped)
 echo "Fetching join token from $CONTROL_VM..."
-TOKEN=$(vagrant ssh "$CONTROL_VM" -- -T "sudo cat /var/lib/rancher/k3s/server/node-token" 2>/dev/null | tr -d '[:space:][:cntrl:]')
+if ! TOKEN=$(vagrant ssh "$CONTROL_VM" -- -T "sudo cat /var/lib/rancher/k3s/server/node-token" 2>/dev/null | tr -d '[:space:][:cntrl:]'); then
+    TOKEN=""
+fi
 if [ -z "$TOKEN" ]; then
     echo "ERROR: Could not get join token. Is k3s running on $CONTROL_VM?"
     echo "  Run: bash scripts/k3s/bootstrap-server.sh"
@@ -42,8 +47,8 @@ join_agent() {
     local vm="$1"
     local loopback="$2"
 
-    # Check if already running
-    if vagrant ssh "$vm" -- -T "sudo systemctl is-active k3s-agent 2>/dev/null" 2>/dev/null | grep -q "^active$"; then
+    # Check if service file exists AND is running
+    if vagrant ssh "$vm" -- -T "test -f /etc/systemd/system/k3s-agent.service && sudo systemctl is-active k3s-agent 2>/dev/null" 2>/dev/null | tr -d '[:cntrl:]' | grep -q "^active$"; then
         echo "    $vm: already running"
         return 0
     fi
@@ -70,8 +75,51 @@ EOF
 systemctl daemon-reload
 systemctl enable --now k3s-agent
 
+if ! systemctl is-active --quiet k3s-agent; then
+    echo "ERROR: k3s-agent is not active on ${vm}"
+    systemctl --no-pager status k3s-agent || true
+    exit 1
+fi
+
 echo "    $vm: agent started"
 AGENT
+}
+
+wait_for_all_nodes_ready() {
+    local wait_seconds="$1"
+    local poll_seconds="$2"
+    local attempts
+    local attempt
+    local status
+    local total
+    local ready
+
+    attempts=$((wait_seconds / poll_seconds))
+    if [ "$attempts" -lt 1 ]; then
+        attempts=1
+    fi
+
+    echo ""
+    echo "=== Waiting for node readiness ==="
+    for attempt in $(seq 1 "$attempts"); do
+        if ! status=$(vagrant ssh "$CONTROL_VM" -- -T "sudo k3s kubectl get nodes --no-headers 2>/dev/null" 2>/dev/null); then
+            status=""
+        fi
+
+        total=$(printf '%s\n' "$status" | awk 'NF {c++} END {print c+0}')
+        ready=$(printf '%s\n' "$status" | awk '$2 ~ /^Ready/ {c++} END {print c+0}')
+        echo "  Attempt $attempt/$attempts: Ready $ready/$total (target ${EXPECTED_TOTAL_NODES}/${EXPECTED_TOTAL_NODES})"
+
+        if [ "$total" -eq "$EXPECTED_TOTAL_NODES" ] && [ "$ready" -eq "$EXPECTED_TOTAL_NODES" ]; then
+            echo "  All nodes are Ready"
+            return 0
+        fi
+
+        sleep "$poll_seconds"
+    done
+
+    echo "ERROR: Timed out waiting for all nodes to become Ready"
+    return 1
 }
 
 # Join rack by rack with pause between racks
@@ -111,10 +159,24 @@ echo "=== Labeling nodes with rack topology ==="
 for vm in "${!LOOPBACKS[@]}"; do
     rack=$(vagrant ssh "$vm" -- -T "cat /etc/netwatch-rack 2>/dev/null" 2>/dev/null | tr -d '[:space:][:cntrl:]')
     if [ -n "$rack" ]; then
-        vagrant ssh "$CONTROL_VM" -- -T "sudo k3s kubectl label node $vm topology.kubernetes.io/zone=$rack --overwrite 2>/dev/null" 2>/dev/null
-        echo "  $vm → $rack"
+        if vagrant ssh "$CONTROL_VM" -- -T "sudo k3s kubectl label node $vm topology.kubernetes.io/zone=$rack --overwrite"; then
+            echo "  $vm -> $rack"
+        else
+            echo "ERROR: Failed to label $vm with topology.kubernetes.io/zone=$rack"
+            exit 1
+        fi
+    else
+        echo "ERROR: Could not read /etc/netwatch-rack from $vm"
+        exit 1
     fi
 done
+
+if ! wait_for_all_nodes_ready "$READY_WAIT_SECONDS" "$READY_POLL_SECONDS"; then
+    echo ""
+    echo "=== Current k3s Cluster Status ==="
+    vagrant ssh "$CONTROL_VM" -- -T "sudo k3s kubectl get nodes -o wide" 2>/dev/null || true
+    exit 1
+fi
 
 echo ""
 echo "=== k3s Cluster Status ==="
@@ -122,5 +184,5 @@ vagrant ssh "$CONTROL_VM" -- -T "sudo k3s kubectl get nodes -o wide" 2>/dev/null
 
 echo ""
 echo "=== Done ==="
-echo "  17 nodes should be Ready: 1 server (mgmt) + 16 agents (may take 60s to settle)"
+echo "  17 nodes are Ready: 1 server (mgmt) + 16 agents"
 echo "  Next: bash scripts/k3s/setup-host-kubectl.sh"

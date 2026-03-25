@@ -10,7 +10,7 @@
 #
 # Run from host: bash scripts/k3s/import-images.sh
 # ==========================================================================
-set -uo pipefail
+set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ARTIFACTS_DIR="$PROJECT_ROOT/artifacts"
