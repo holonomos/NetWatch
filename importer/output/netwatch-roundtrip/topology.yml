@@ -1,0 +1,332 @@
+project:
+  name: netwatch-netwatch-roundtrip
+  version: '1.0'
+  description: Imported from production snapshot 'netwatch-roundtrip'
+timers:
+  dilation_factor: 10
+  bfd:
+    tx_interval_ms: 3000
+    rx_interval_ms: 3000
+    detect_multiplier: 3
+  bgp:
+    keepalive_s: 30
+    holdtime_s: 90
+asn:
+  border: 65000
+  spine: 65001
+  metallb: 65200
+  racks:
+    rack-1: 65103
+    rack-2: 65101
+    rack-3: 65104
+    rack-4: 65102
+addressing:
+  loopback:
+    cidr: 10.0.0.0/16
+  fabric:
+    cidr: 172.16.0.0/16
+    pools:
+      border_bastion: 172.16.0.0/24
+      border_spine: 172.16.1.0/24
+      spine_leaf: 172.16.2.0/24
+      leaf_server_rack1: 172.16.3.0/24
+      leaf_server_rack2: 172.16.4.0/24
+      leaf_server_rack3: 172.16.5.0/24
+      leaf_server_rack4: 172.16.6.0/24
+  services:
+    cidr: 10.100.0.0/24
+  management:
+    cidr: 192.168.0.0/24
+    gateway: 192.168.0.1
+nodes:
+  borders:
+  - name: border-1
+    type: frr-vm
+    role: border
+    asn: 65000
+    loopback: 10.0.1.1/32
+    mgmt_ip: 192.168.0.10
+    metrics_port: 9342
+    _imported_from: border-2
+  - name: border-2
+    type: frr-vm
+    role: border
+    asn: 65000
+    loopback: 10.0.1.2/32
+    mgmt_ip: 192.168.0.11
+    metrics_port: 9342
+    _imported_from: border-1
+  spines:
+  - name: spine-1
+    type: frr-vm
+    role: spine
+    asn: 65001
+    loopback: 10.0.2.1/32
+    mgmt_ip: 192.168.0.20
+    metrics_port: 9342
+    _imported_from: spine-2
+  - name: spine-2
+    type: frr-vm
+    role: spine
+    asn: 65001
+    loopback: 10.0.2.2/32
+    mgmt_ip: 192.168.0.21
+    metrics_port: 9342
+    _imported_from: spine-1
+  leafs:
+  - name: leaf-1a
+    type: frr-vm
+    role: leaf
+    asn: 65103
+    loopback: 10.0.3.1/32
+    mgmt_ip: 192.168.0.12
+    metrics_port: 9342
+    rack: rack-1
+    evpn_vtep: true
+    _imported_from: leaf-3a
+  - name: leaf-1b
+    type: frr-vm
+    role: leaf
+    asn: 65103
+    loopback: 10.0.3.2/32
+    mgmt_ip: 192.168.0.13
+    metrics_port: 9342
+    rack: rack-1
+    evpn_vtep: true
+    _imported_from: leaf-3b
+  - name: leaf-2a
+    type: frr-vm
+    role: leaf
+    asn: 65101
+    loopback: 10.0.3.3/32
+    mgmt_ip: 192.168.0.14
+    metrics_port: 9342
+    rack: rack-2
+    evpn_vtep: true
+    _imported_from: leaf-1a
+  - name: leaf-2b
+    type: frr-vm
+    role: leaf
+    asn: 65101
+    loopback: 10.0.3.4/32
+    mgmt_ip: 192.168.0.15
+    metrics_port: 9342
+    rack: rack-2
+    evpn_vtep: true
+    _imported_from: leaf-1b
+  - name: leaf-3a
+    type: frr-vm
+    role: leaf
+    asn: 65104
+    loopback: 10.0.3.5/32
+    mgmt_ip: 192.168.0.16
+    metrics_port: 9342
+    rack: rack-3
+    evpn_vtep: true
+    _imported_from: leaf-4a
+  - name: leaf-3b
+    type: frr-vm
+    role: leaf
+    asn: 65104
+    loopback: 10.0.3.6/32
+    mgmt_ip: 192.168.0.17
+    metrics_port: 9342
+    rack: rack-3
+    evpn_vtep: true
+    _imported_from: leaf-4b
+  - name: leaf-4a
+    type: frr-vm
+    role: leaf
+    asn: 65102
+    loopback: 10.0.3.7/32
+    mgmt_ip: 192.168.0.18
+    metrics_port: 9342
+    rack: rack-4
+    evpn_vtep: true
+    _imported_from: leaf-2a
+  - name: leaf-4b
+    type: frr-vm
+    role: leaf
+    asn: 65102
+    loopback: 10.0.3.8/32
+    mgmt_ip: 192.168.0.19
+    metrics_port: 9342
+    rack: rack-4
+    evpn_vtep: true
+    _imported_from: leaf-2b
+  servers: []
+  infrastructure:
+  - name: bastion
+    type: fedora-vm
+    role: bastion
+    mgmt_ip: 192.168.0.2
+    metrics_port: 9100
+  - name: mgmt
+    type: fedora-vm
+    role: mgmt
+    mgmt_ip: 192.168.0.3
+    services:
+    - k3s: 6443
+  - name: obs
+    type: fedora-vm
+    role: obs
+    mgmt_ip: 192.168.0.4
+    services:
+    - prometheus: 9090
+    - grafana: 3000
+    - loki: 3100
+    - dnsmasq: 53
+links:
+  border_bastion:
+  - a: border-1
+    b: bastion
+    subnet: 172.16.0.0/30
+    a_ip: 172.16.0.1
+    b_ip: 172.16.0.2
+  - a: border-2
+    b: bastion
+    subnet: 172.16.0.4/30
+    a_ip: 172.16.0.5
+    b_ip: 172.16.0.6
+  border_spine:
+  - a: border-1
+    b: spine-2
+    subnet: 172.16.1.0/30
+    a_ip: 172.16.1.1
+    b_ip: 172.16.1.2
+  - a: border-1
+    b: spine-1
+    subnet: 172.16.1.4/30
+    a_ip: 172.16.1.5
+    b_ip: 172.16.1.6
+  - a: spine-1
+    b: border-2
+    subnet: 172.16.1.8/30
+    a_ip: 172.16.1.9
+    b_ip: 172.16.1.10
+  - a: border-2
+    b: spine-2
+    subnet: 172.16.1.12/30
+    a_ip: 172.16.1.13
+    b_ip: 172.16.1.14
+  spine_leaf:
+  - a: spine-1
+    b: leaf-2a
+    subnet: 172.16.2.0/30
+    a_ip: 172.16.2.1
+    b_ip: 172.16.2.2
+  - a: spine-1
+    b: leaf-1a
+    subnet: 172.16.2.4/30
+    a_ip: 172.16.2.5
+    b_ip: 172.16.2.6
+  - a: spine-1
+    b: leaf-2b
+    subnet: 172.16.2.8/30
+    a_ip: 172.16.2.9
+    b_ip: 172.16.2.10
+  - a: spine-1
+    b: leaf-1b
+    subnet: 172.16.2.12/30
+    a_ip: 172.16.2.13
+    b_ip: 172.16.2.14
+  - a: spine-1
+    b: leaf-4a
+    subnet: 172.16.2.16/30
+    a_ip: 172.16.2.17
+    b_ip: 172.16.2.18
+  - a: spine-1
+    b: leaf-3a
+    subnet: 172.16.2.20/30
+    a_ip: 172.16.2.21
+    b_ip: 172.16.2.22
+  - a: spine-1
+    b: leaf-4b
+    subnet: 172.16.2.24/30
+    a_ip: 172.16.2.25
+    b_ip: 172.16.2.26
+  - a: spine-1
+    b: leaf-3b
+    subnet: 172.16.2.28/30
+    a_ip: 172.16.2.29
+    b_ip: 172.16.2.30
+  - a: leaf-1b
+    b: spine-2
+    subnet: 172.16.2.32/30
+    a_ip: 172.16.2.33
+    b_ip: 172.16.2.34
+  - a: leaf-2b
+    b: spine-2
+    subnet: 172.16.2.36/30
+    a_ip: 172.16.2.37
+    b_ip: 172.16.2.38
+  - a: leaf-1a
+    b: spine-2
+    subnet: 172.16.2.40/30
+    a_ip: 172.16.2.41
+    b_ip: 172.16.2.42
+  - a: leaf-3a
+    b: spine-2
+    subnet: 172.16.2.44/30
+    a_ip: 172.16.2.45
+    b_ip: 172.16.2.46
+  - a: leaf-4a
+    b: spine-2
+    subnet: 172.16.2.48/30
+    a_ip: 172.16.2.49
+    b_ip: 172.16.2.50
+  - a: leaf-3b
+    b: spine-2
+    subnet: 172.16.2.52/30
+    a_ip: 172.16.2.53
+    b_ip: 172.16.2.54
+  - a: leaf-4b
+    b: spine-2
+    subnet: 172.16.2.56/30
+    a_ip: 172.16.2.57
+    b_ip: 172.16.2.58
+  - a: leaf-2a
+    b: spine-2
+    subnet: 172.16.2.60/30
+    a_ip: 172.16.2.61
+    b_ip: 172.16.2.62
+  leaf_server: []
+management:
+  bridge: virbr2
+  cidr: 192.168.0.0/24
+  gateway: 192.168.0.1
+  dhcp_server: obs
+  dns_domain: netwatch.lab
+observability:
+  prometheus:
+    host: obs
+    port: 9090
+    scrape_interval_s: 15
+    targets:
+      frr_nodes:
+        port: 9342
+        nodes:
+        - border-1
+        - border-2
+        - spine-1
+        - spine-2
+        - leaf-1a
+        - leaf-1b
+        - leaf-2a
+        - leaf-2b
+        - leaf-3a
+        - leaf-3b
+        - leaf-4a
+        - leaf-4b
+      vm_nodes:
+        port: 9100
+        nodes:
+        - bastion
+        - mgmt
+        - obs
+  grafana:
+    host: obs
+    port: 3000
+  loki:
+    host: obs
+    port: 3100

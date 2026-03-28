@@ -72,7 +72,7 @@ router bgp {{ asn }}
 {% if bastion_gateways or server_static_routes %}
   redistribute static
 {% endif %}
-  maximum-paths 8
+  maximum-paths {{ max_paths | default(8) }}
 {% for nbr in bgp_neighbors %}
   neighbor {{ nbr.ip }} activate
 {% if needs_allowas_in %}
@@ -112,4 +112,11 @@ bfd
 {% endfor %}
 exit
 !
+{% if frr_fragments_content %}
+! --- Imported routing policies ---
+{% for fragment in frr_fragments_content %}
+{{ fragment }}
+{% endfor %}
+!
+{% endif %}
 end

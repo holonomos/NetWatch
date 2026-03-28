@@ -1,7 +1,7 @@
 .PHONY: up down nuke vms vms-halt vms-destroy frr-up frr-down frr-restart \
        bridges fabric evpn wire routes status teardown generate dashboard help \
        chaos-link-down chaos-link-up chaos-flap chaos-latency chaos-loss \
-       chaos-partition chaos-kill
+       chaos-partition chaos-kill import
 
 # ==========================================================================
 # Full lifecycle
@@ -129,6 +129,9 @@ bastion-images:                      ## Distribute container images from images/
 
 generate:                            ## Regenerate all configs from topology.yml
 	python3 generator/generate.py
+
+import:                              ## Import prod configs → topology.yml (SNAPSHOT=name)
+	python3 importer/import.py --snapshot $(SNAPSHOT)
 
 dashboard:                           ## SSH tunnel to Grafana/Prometheus/Loki (on obs VM)
 	vagrant ssh obs -- -L 3000:localhost:3000 -L 9090:localhost:9090 -L 3100:localhost:3100

@@ -1,0 +1,9 @@
+roles:
+  border-*: border
+  spine-*: spine
+  leaf-*: leaf
+
+asn_roles:
+  65000: border
+  65001: spine
+  65101-65104: leaf

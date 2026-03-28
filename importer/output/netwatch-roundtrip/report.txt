@@ -1,0 +1,21 @@
+# NetWatch Import Report — netwatch-roundtrip
+
+Devices: 12 mapped / 12 total (0 dropped)
+Edges:   20 mapped / 20 total
+Policies: 0 extracted
+
+## Device Mapping
+Production                     → NetWatch            
+-------------------------------------------------------
+border-1                       → border-2            
+border-2                       → border-1            
+leaf-1a                        → leaf-2a             
+leaf-1b                        → leaf-2b             
+leaf-2a                        → leaf-4a             
+leaf-2b                        → leaf-4b             
+leaf-3a                        → leaf-1a             
+leaf-3b                        → leaf-1b             
+leaf-4a                        → leaf-3a             
+leaf-4b                        → leaf-3b             
+spine-1                        → spine-2             
+spine-2                        → spine-1             

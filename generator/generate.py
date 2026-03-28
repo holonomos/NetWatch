@@ -307,6 +307,18 @@ def build_frr_context(node: dict, topo: dict, all_nodes: dict = None) -> dict:
                     seen_ranges.add(range_prefix)
                     metallb_listen_ranges.append(range_prefix)
 
+    # Load FRR config fragments (imported routing policies)
+    frr_fragments_content = []
+    for frag_path in node.get("frr_fragments", []):
+        try:
+            with open(frag_path) as f:
+                frr_fragments_content.append(f.read().rstrip())
+        except FileNotFoundError:
+            print(f"WARNING: FRR fragment not found: {frag_path}")
+
+    # Optional overrides from frr_overrides top-level key
+    overrides = topo.get("frr_overrides", {})
+
     return {
         "hostname": node["name"],
         "role": node["role"],
@@ -326,6 +338,8 @@ def build_frr_context(node: dict, topo: dict, all_nodes: dict = None) -> dict:
         "bastion_gateways": bastion_gateways,
         "server_static_routes": server_static_routes,
         "metallb_listen_ranges": metallb_listen_ranges,
+        "max_paths": overrides.get("max_paths", 8),
+        "frr_fragments_content": frr_fragments_content,
     }
 
 
