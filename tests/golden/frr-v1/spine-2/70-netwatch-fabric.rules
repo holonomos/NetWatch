@@ -1,0 +1,14 @@
+# NetWatch — udev interface naming rules for spine-2
+# Generated from topology.yml — DO NOT HAND-EDIT
+# Maps deterministic MACs to FRR interface names.
+
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:02:01:02", NAME="eth-border-1"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:02:02:02", NAME="eth-border-2"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:02:03:02", NAME="eth-leaf-1a"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:02:04:02", NAME="eth-leaf-1b"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:02:05:02", NAME="eth-leaf-2a"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:02:06:02", NAME="eth-leaf-2b"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:02:07:02", NAME="eth-leaf-3a"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:02:08:02", NAME="eth-leaf-3b"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:02:09:02", NAME="eth-leaf-4a"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:02:0a:02", NAME="eth-leaf-4b"

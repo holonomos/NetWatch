@@ -20,14 +20,16 @@ from .model import (
 
 def extract_fragments(
     topo: CanonicalTopology,
-    ip_mappings: list[IPMapping],
+    ip_mappings: list[IPMapping] | None,
     output_dir: Path,
 ) -> int:
     """Write FRR config fragments for all active devices with policies.
 
     Args:
         topo: Topology with policies populated.
-        ip_mappings: IP mapping table for address rewriting.
+        ip_mappings: IP mapping table for address rewriting.  Pass None or
+                     empty list to emit production IPs verbatim (recommended —
+                     avoids silent fidelity loss from translated prefix-lists).
         output_dir: Directory to write fragment files into.
 
     Returns:
@@ -35,8 +37,10 @@ def extract_fragments(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build prod→netwatch IP lookup
-    ip_map = {m.prod_ip: m.netwatch_ip for m in ip_mappings}
+    # Build prod→netwatch IP lookup.  Empty map = production IPs pass through
+    # unchanged, which is the correct default (prefix-lists, route-maps, and
+    # ACLs must reference the same IPs as production).
+    ip_map = {m.prod_ip: m.netwatch_ip for m in ip_mappings} if ip_mappings else {}
 
     count = 0
     for device in topo.active_devices():

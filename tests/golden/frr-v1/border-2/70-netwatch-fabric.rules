@@ -1,0 +1,7 @@
+# NetWatch — udev interface naming rules for border-2
+# Generated from topology.yml — DO NOT HAND-EDIT
+# Maps deterministic MACs to FRR interface names.
+
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:01:01:02", NAME="eth-bastion"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:01:02:02", NAME="eth-spine-1"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:01:03:02", NAME="eth-spine-2"

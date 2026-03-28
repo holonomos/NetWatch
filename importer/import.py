@@ -58,6 +58,10 @@ def main() -> None:
         "--skip-batfish", action="store_true",
         help="Skip Batfish container management (assume already running)",
     )
+    parser.add_argument(
+        "--remap-ips", action="store_true",
+        help="Remap production IPs to NetWatch scheme (default: use production IPs verbatim)",
+    )
     args = parser.parse_args()
 
     # Resolve paths
@@ -107,12 +111,17 @@ def main() -> None:
     map_to_netwatch(topo)
 
     # ------------------------------------------------------------------
-    # Stage 4: IP remapping
+    # Stage 4: IP remapping (optional — default: use production IPs)
     # ------------------------------------------------------------------
-    ip_mappings = remap_ips(topo)
+    ip_mappings = None
+    if args.remap_ips:
+        ip_mappings = remap_ips(topo)
+        print(f"[remap] Remapped {len(ip_mappings)} IPs to NetWatch scheme")
+    else:
+        print("[remap] Using production IPs verbatim (--remap-ips not set)")
 
     # ------------------------------------------------------------------
-    # Stage 5: Policy extraction
+    # Stage 5: Policy extraction (verbatim production IPs by default)
     # ------------------------------------------------------------------
     policy_count = extract_fragments(topo, ip_mappings, fragment_dir)
 
@@ -120,7 +129,7 @@ def main() -> None:
     # Stage 6: Emit topology.yml
     # ------------------------------------------------------------------
     topology_path = output_dir / "topology.yml"
-    emit_topology(topo, ip_mappings, topology_path, fragment_dir, args.snapshot)
+    emit_topology(topo, ip_mappings or [], topology_path, fragment_dir, args.snapshot)
 
     # ------------------------------------------------------------------
     # Stage 7: Write mapping and report
@@ -136,7 +145,7 @@ def main() -> None:
         and not topo.devices.get(e.b_hostname, type("", (), {"dropped": True})).dropped
     )
     report.total_policies = policy_count
-    report.ip_mappings = ip_mappings
+    report.ip_mappings = ip_mappings or []
 
     for device in topo.active_devices():
         report.device_mapping[device.hostname] = device.netwatch_name or device.hostname

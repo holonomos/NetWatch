@@ -1,0 +1,10 @@
+# NetWatch — udev interface naming rules for leaf-2b
+# Generated from topology.yml — DO NOT HAND-EDIT
+# Maps deterministic MACs to FRR interface names.
+
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:03:01:04", NAME="eth-spine-1"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:03:02:04", NAME="eth-spine-2"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:03:03:04", NAME="eth-srv-2-1"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:03:04:04", NAME="eth-srv-2-2"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:03:05:04", NAME="eth-srv-2-3"
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="02:4e:57:03:06:04", NAME="eth-srv-2-4"
