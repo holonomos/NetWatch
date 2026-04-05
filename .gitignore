@@ -8,5 +8,5 @@ repo/.serve.log
 .vagrant/
 __pycache__/
 *.pyc
-
+future/
 *.box
