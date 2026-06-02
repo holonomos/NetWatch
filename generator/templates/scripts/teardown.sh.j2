@@ -1,0 +1,107 @@
+#!/bin/bash
+# NetWatch — Teardown
+# Generated from topology.yml — DO NOT HAND-EDIT
+#
+# Shuts down all FRR VMs, detaches the persisted (--config) fabric/overlay NICs
+# from every domain, and removes the fabric + overlay bridges.
+# Does NOT destroy VMs (use `vagrant destroy` for that).
+#
+# Run as your user (uses sudo internally for bridge commands only).
+
+set -uo pipefail
+
+VIRSH_PREFIX="$(basename "$(cd "$(dirname "$0")/../.." && pwd)")"
+
+echo "NetWatch: Tearing down fabric..."
+
+# Helper: detach a persisted (--config) NIC by MAC from a domain. Fabric NICs
+# were hot-plugged with --config (persisted in the domain XML); without this,
+# after teardown + `vagrant up` the VM references bridges that no longer exist.
+# Detaches --live too when the domain is still running.
+# Tolerant: a domain/NIC that is already gone is not an error.
+detach_nic() {
+    local vm="$1"
+    local mac="$2"
+    local domain="${VIRSH_PREFIX}_${vm}"
+
+    virsh -c qemu:///system domiflist "$domain" >/dev/null 2>&1 </dev/null || return 0
+    local state
+    state=$(virsh -c qemu:///system domstate "$domain" 2>/dev/null || echo "shut off")
+    if virsh -c qemu:///system domiflist "$domain" 2>/dev/null </dev/null | grep -qi "$mac"; then
+        if [ "$state" = "running" ]; then
+            virsh -c qemu:///system detach-interface "$domain" bridge --mac "$mac" \
+                --live --config </dev/null >/dev/null 2>&1 \
+                && echo "    $vm ($mac): detached (live+config)" || true
+        else
+            virsh -c qemu:///system detach-interface "$domain" bridge --mac "$mac" \
+                --config </dev/null >/dev/null 2>&1 \
+                && echo "    $vm ($mac): detached (config)" || true
+        fi
+    fi
+}
+
+# --- Shut down FRR VMs ---
+echo "  Shutting down FRR VMs..."
+{% for node in frr_nodes %}
+virsh -c qemu:///system shutdown "${VIRSH_PREFIX}_{{ node.name }}" 2>/dev/null && echo "    {{ node.name }}: shutdown sent" || echo "    {{ node.name }}: not running"
+{% endfor %}
+
+# Wait briefly for graceful shutdown
+echo "  Waiting for VMs to shut down..."
+sleep 5
+
+# Force-kill any that didn't shut down gracefully
+{% for node in frr_nodes %}
+STATE=$(virsh -c qemu:///system domstate "${VIRSH_PREFIX}_{{ node.name }}" 2>/dev/null || echo "shut off")
+if [ "$STATE" != "shut off" ]; then
+    virsh -c qemu:///system destroy "${VIRSH_PREFIX}_{{ node.name }}" 2>/dev/null && echo "    {{ node.name }}: force-killed" || true
+fi
+{% endfor %}
+
+# --- Detach persisted (--config) fabric/overlay NICs from every domain ---
+# Otherwise the next `vagrant up` boots VMs whose XML references now-deleted
+# bridges. Servers/bastion are left running; only their extra NICs are removed.
+echo ""
+echo "  Detaching persisted fabric/overlay NICs..."
+{% for node in frr_nodes %}
+{% for iface in node.interfaces %}
+detach_nic "{{ node.name }}" "{{ iface.mac }}"
+{% endfor %}
+{% endfor %}
+{% for ln in leaf_overlay_nics %}
+detach_nic "{{ ln.leaf }}" "{{ ln.mac }}"
+{% endfor %}
+{% for server in server_nodes %}
+detach_nic "{{ server.name }}" "{{ server.leaf_a_mac }}"
+detach_nic "{{ server.name }}" "{{ server.leaf_b_mac }}"
+{% endfor %}
+{% for so in server_overlay_nics %}
+detach_nic "{{ so.server }}" "{{ so.mac }}"
+{% endfor %}
+{% if bastion_node and bastion_node.interfaces|length >= 2 %}
+detach_nic "bastion" "02:4E:57:05:01:01"
+detach_nic "bastion" "02:4E:57:05:01:02"
+{% endif %}
+
+# --- Remove fabric bridges ---
+echo ""
+echo "  Removing fabric bridges..."
+{% for link in links %}
+sudo ip link set {{ link.bridge }} down 2>/dev/null || true
+sudo ip link del {{ link.bridge }} 2>/dev/null && echo "    {{ link.bridge }}: removed" || true
+{% endfor %}
+{% if overlay_bridges %}
+
+# --- Remove EVPN overlay access bridges ---
+{% for ob in overlay_bridges %}
+sudo ip link set {{ ob }} down 2>/dev/null || true
+sudo ip link del {{ ob }} 2>/dev/null && echo "    {{ ob }}: removed" || true
+{% endfor %}
+{% endif %}
+
+# --- Management bridge ---
+# Managed by libvirt — do NOT delete it here.
+
+echo ""
+echo "NetWatch: Fabric teardown complete."
+echo "  To destroy VMs: vagrant destroy -f"

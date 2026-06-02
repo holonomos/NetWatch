@@ -1,0 +1,21 @@
+# --- Generated config (regenerate with `make generate`) ---
+generated/
+
+# --- Large build artifacts (boxes, RPMs, binaries) ---
+artifacts/boxes/*
+artifacts/rpms/*
+artifacts/binaries/*
+!artifacts/**/.gitkeep
+artifacts/*.tar
+artifacts/*.tgz
+artifacts/.serve.pid
+artifacts/.serve.log
+repo/
+
+# --- Vagrant / libvirt runtime state ---
+.vagrant/
+.bake-tmp/
+
+# --- Python bytecode ---
+__pycache__/
+*.pyc
