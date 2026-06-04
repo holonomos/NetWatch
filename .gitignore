@@ -19,3 +19,6 @@ repo/
 # --- Python bytecode ---
 __pycache__/
 *.pyc
+
+# Local learning notes (not part of the repo)
+TEXTBOOK.md

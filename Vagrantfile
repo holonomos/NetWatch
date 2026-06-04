@@ -1,7 +1,7 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 #
-# NetWatch — Vagrantfile
+# NetWatch Vagrantfile
 # 31 VMs: 2 border + 2 spine + 8 leaf + 16 server + bastion + obs + mgmt
 # Golden image: everything pre-installed, provisioning only configures.
 # No Docker. All VMs use netwatch-golden box.
@@ -33,7 +33,7 @@ Vagrant.configure("2") do |config|
   # Common config: DNS, sysctls, node_exporter (all 31 VMs)
   # ========================================================================
   COMMON_BASE = <<~SHELL
-    # DNS — point at mgmt VM (dnsmasq)
+    # DNS: point at obs VM (dnsmasq on 192.168.0.4)
     rm -f /etc/resolv.conf
     cat > /etc/resolv.conf <<DNSEOF
     nameserver 192.168.0.4
@@ -59,7 +59,7 @@ Vagrant.configure("2") do |config|
     systemctl daemon-reload
     systemctl enable --now node_exporter
 
-    # SSH hardening — disable password auth, key-only access
+    # SSH hardening: disable password auth, key-only access
     sed -i 's/^#\\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config
     sed -i 's/^#\\?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
     # Drop any sshd_config.d overrides that re-enable passwords
@@ -73,7 +73,7 @@ Vagrant.configure("2") do |config|
   # Client config: chrony + rsyslog forwarding (servers + bastion + FRR VMs)
   # ========================================================================
   COMMON_CLIENT = <<~SHELL
-    # Chrony — NTP client, sync from mgmt
+    # Chrony: NTP client, sync from obs (192.168.0.4)
     cat > /etc/chrony.conf <<CHEOF
     server 192.168.0.4 iburst
     stratumweight 0
@@ -83,7 +83,7 @@ Vagrant.configure("2") do |config|
     CHEOF
     systemctl enable --now chronyd
 
-    # Rsyslog — forward to Loki on mgmt
+    # Rsyslog: forward to Loki on obs (192.168.0.4)
     cat > /etc/rsyslog.d/99-netwatch-forward.conf <<RSEOF
     *.* @@192.168.0.4:514
     RSEOF
@@ -102,7 +102,7 @@ Vagrant.configure("2") do |config|
       chown -R frr:frr /etc/frr/
       chmod 640 /etc/frr/frr.conf /etc/frr/daemons /etc/frr/vtysh.conf
     else
-      echo "WARNING: /tmp/netwatch-config/frr not found — FRR configs not deployed"
+      echo "WARNING: /tmp/netwatch-config/frr not found; FRR configs not deployed"
     fi
 
     # Copy udev rules for interface renaming (MAC -> eth-peer-name)
@@ -123,7 +123,7 @@ Vagrant.configure("2") do |config|
   SHELL
 
   # ========================================================================
-  # Observability VM — Prometheus, Grafana, Loki, dnsmasq, chrony (boot first)
+  # Observability VM: Prometheus, Grafana, Loki, dnsmasq, chrony (boot first)
   # ========================================================================
   config.vm.define "obs" do |node|
     node.vm.hostname = "obs"
@@ -238,7 +238,7 @@ Vagrant.configure("2") do |config|
   define_frr_switch(config, "leaf-4b", "192.168.0.37")
 
   # ========================================================================
-  # Bastion VM — sole NAT gateway, north-south boundary
+  # Bastion VM: sole NAT gateway, north-south boundary
   # ========================================================================
   config.vm.define "bastion" do |node|
     node.vm.hostname = "bastion"
@@ -265,7 +265,7 @@ Vagrant.configure("2") do |config|
       sysctl -w net.ipv4.ip_forward=1
       grep -q 'net.ipv4.ip_forward=1' /etc/sysctl.d/99-netwatch.conf || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.d/99-netwatch.conf
 
-      # NAT masquerade — dynamically find the internet-facing interface
+      # NAT masquerade: dynamically find the internet-facing interface
       INET_IF=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1); exit}')
       if [ -n "$INET_IF" ]; then
         # OOB management network
@@ -284,7 +284,7 @@ Vagrant.configure("2") do |config|
 
   # ========================================================================
   # Compute Servers (4 racks x 4 servers = 16 VMs)
-  # Fabric endpoints — dumb compute attached via leaf switches.
+  # Fabric endpoints: dumb compute attached via leaf switches.
   # Data-plane interfaces wired post-boot by scripts/fabric/setup-server-links.sh
   # ========================================================================
   def define_server(config, name, rack, mgmt_ip, memory: 768)

@@ -1,15 +1,7 @@
 #!/usr/bin/env bash
-# ==========================================================================
-# nuke.sh — Full fabric teardown to a clean slate
-# ==========================================================================
-# Destroys: FRR VMs (force-kill), fabric bridges, and detaches all fabric NICs
-# from VMs.
-#
-# Does NOT destroy server/bastion/mgmt VMs — use vagrant halt/destroy for those.
-# Protects management NICs (netwatch-mgmt bridge) from being detached.
-#
+# Full fabric teardown: force-kill FRR VMs, remove fabric bridges, detach
+# fabric NICs. Leaves server/bastion/mgmt VMs and the mgmt NIC untouched.
 # Usage: bash scripts/nuke.sh
-# ==========================================================================
 set -uo pipefail
 
 # Derive libvirt domain prefix from the project root basename (matches scripts/fabric/*.sh).
@@ -64,7 +56,7 @@ for vm in $(virsh -c qemu:///system list --all --name 2>/dev/null | grep -i netw
         # Skip non-bridge interfaces
         [ "$iface_type" = "bridge" ] || continue
 
-        # PROTECT management NICs — never detach the mgmt bridge
+        # PROTECT management NICs: never detach the mgmt bridge
         if [ "$iface_source" = "$MGMT_BRIDGE" ]; then
             continue
         fi
@@ -95,6 +87,18 @@ for i in $(seq 0 99); do
     fi
 done
 echo "  $removed bridges removed"
+
+# --- 4b. Remove orphaned EVPN overlay bridges (br-ovl-*) ---
+# Host-only cleanup; mirrors generated teardown.sh.
+echo ""
+echo "=== Removing overlay bridges (br-ovl-*) ==="
+ovl_removed=0
+for br in $(ip -o link show type bridge 2>/dev/null | awk -F': ' '{print $2}' | grep -E '^br-ovl-' || true); do
+    sudo ip link set "$br" down 2>/dev/null || true
+    sudo ip link del "$br" 2>/dev/null || true
+    ovl_removed=$((ovl_removed + 1))
+done
+echo "  $ovl_removed overlay bridges removed"
 
 # --- Summary ---
 echo ""

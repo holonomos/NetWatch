@@ -14,8 +14,8 @@ project:
   name: netwatch
   version: "1.0"
   description: >
-    31-node hyperscale data-center lab emulator built around a
-    12-node 3-tier L3 Clos routing fabric. All VMs, no Docker.
+    31-VM data-center lab emulator built around a
+    12-switch 3-tier L3 Clos routing fabric. All VMs, no Docker.
 
 # ============================================================================
 # CONTROL-PLANE TIMERS
@@ -96,7 +96,7 @@ addressing:
 # 31 total: 12 FRR VMs + 16 server VMs + 1 bastion VM + 1 obs VM + 1 mgmt VM
 # All VMs use the netwatch-golden box (Fedora Cloud + FRR 10.5.0). No Docker.
 # obs (192.168.0.4) runs the full observability + DNS/NTP stack.
-# mgmt (192.168.0.3) is a reserved stub today (base+client only, no services).
+# mgmt (192.168.0.3) is a reserved stub (base+client only, no services).
 #
 # Convention:
 #   - FRR VMs: Fedora, 256 MB, FRR enabled at provision time, fabric NICs hot-plugged
@@ -421,7 +421,7 @@ nodes:
 
   # --- Infrastructure nodes ------------------------------------------------
   infrastructure:
-    # Observability host — the real stack lives here (provision-obs.sh).
+    # Observability host: the real stack lives here (provision-obs.sh).
     # Boots first; every VM's baked-in resolv.conf points DNS at 192.168.0.4.
     - name: obs
       type: fedora-vm
@@ -455,7 +455,7 @@ nodes:
       memory_mb: 2048
       mgmt_ip: "192.168.0.3"
       metrics_port: 9100
-      description: "RESERVED stub — no services; observability/DNS/NTP run on obs"
+      description: "RESERVED stub: no services; observability/DNS/NTP run on obs"
 
 # ============================================================================
 # FABRIC LINKS
@@ -586,8 +586,9 @@ links:
 # ============================================================================
 # MANAGEMENT NETWORK
 # ============================================================================
-# Single Linux bridge (br-mgmt) connecting all 30 nodes for OOB access.
-# Isolated from the routed fabric. DHCP/DNS served by mgmt node.
+# Single libvirt network (netwatch-mgmt, bridge virbr2) for OOB access across
+# the 31-node lab (30 nodes on the OOB net; bastion also carries it).
+# Isolated from the routed fabric. DHCP by libvirt; DNS (netwatch.lab) by obs.
 
 management:
   bridge: virbr2
@@ -649,12 +650,10 @@ observability:
     host: obs
     port: 3000
     dashboards:
-      - fabric-overview
-      - bgp-status
-      - node-detail
-      - interface-counters
-      - chaos-events
+      - noc-overview
+      - fabric-routing
       - evpn-vxlan
+      - hosts-interfaces
 
   loki:
     host: obs
@@ -662,15 +661,14 @@ observability:
     description: "rsyslog from all nodes -> Loki -> Grafana LogQL"
 
 # ============================================================================
-# EVPN / VXLAN (OVERLAY - LATE PHASE)
+# EVPN / VXLAN (OVERLAY)
 # ============================================================================
-# Implemented after the underlay is proven (post P6).
-# Leafs are VTEPs. MP-BGP L2VPN address family.
+# Leafs are VTEPs. MP-BGP L2VPN address family on top of the routed underlay.
 
 evpn:
   enabled: true
-  vni_base: 10000
-  vtep_nodes:                            # unchanged — all 8 leaves are VTEPs
+  # VNIs are explicit per-tenant (tenants[].l2vni) and the symmetric IRB l3vni.
+  vtep_nodes:                            # all 8 leaves are VTEPs
     - leaf-1a
     - leaf-1b
     - leaf-2a
@@ -682,8 +680,8 @@ evpn:
 
   # --- Symmetric IRB / L3VNI (distributed anycast gateway) -----------------
   # Tenant routing VRF + transit L3VNI. Instantiated on ALL 8 leaves so the
-  # anycast gateway is truly distributed. RT/RD are explicit (ASN-independent)
-  # because each rack is a distinct ASN (65101-65104) — auto-RT would not match.
+  # anycast gateway is distributed. RT/RD are explicit (ASN-independent)
+  # because each rack is a distinct ASN (65101-65104); auto-RT would not match.
   l3vni: 10999                           # symmetric IRB transit VNI
   l3vni_vrf: Tenant-A                    # tenant VRF name
   l3vni_vlan: 999                        # SVI VLAN for the L3VNI bridge
@@ -691,16 +689,16 @@ evpn:
   l3vni_rt: "65000:10999"                # explicit import/export RT for L3VNI
   anycast_gw_mac: "00:00:5e:00:01:99"    # identical on every leaf (IANA VRRP-style)
   overlay_supernet: "10.99.0.0/16"       # single CONNECTED-FILTER deny covers all tenant /24s
-  vxlan_dstport: 4789                    # unchanged
+  vxlan_dstport: 4789                    # standard VXLAN UDP port
 
   # --- Tenants (VNI-per-tenant L2 segments over VXLAN) ---------------------
   # Real servers attach a dedicated overlay access NIC (tnt0/tnt1) single-homed
   # to leaf-Xa. Access is added OUTSIDE node[].interfaces (separate generator
-  # context lists) and NOT via top-level links: — so the 54-link /30 underlay
+  # context lists) and NOT via top-level links:, so the 54-link /30 underlay
   # registry and the len(interfaces)==2 server guard are untouched.
   tenants:
     - name: tenant-a
-      l2vni: 10000                       # reuse existing vxlan10000 / br-vni10000
+      l2vni: 10000                       # vxlan10000 / br-vni10000
       access_vlan: 99
       subnet: "10.99.0.0/24"
       anycast_gw: "10.99.0.1/24"         # identical on all 8 leaves
@@ -712,7 +710,7 @@ evpn:
         - { server: srv-3-1, leaf: leaf-3a, overlay_ip: "10.99.0.31/24", mac: "02:4E:57:07:09:01", nic: tnt0 }
         - { server: srv-4-1, leaf: leaf-4a, overlay_ip: "10.99.0.41/24", mac: "02:4E:57:07:0D:01", nic: tnt0 }
     - name: tenant-b
-      l2vni: 10001                       # new vxlan10001 / br-vni10001
+      l2vni: 10001                       # vxlan10001 / br-vni10001
       access_vlan: 98
       subnet: "10.99.1.0/24"
       anycast_gw: "10.99.1.1/24"
@@ -723,29 +721,8 @@ evpn:
 
   description: >
     VNI-per-tenant L2 overlay over VXLAN (real servers) + distributed anycast
-    IRB + symmetric L3VNI 10999. Additive: the routed /30 ECMP underlay is
-    byte-identical. Leaf VTEPs. Consumed by generate.py to render leaf FRR
+    IRB + symmetric L3VNI 10999, layered on the routed /30 ECMP underlay
+    without touching it. Leaf VTEPs. Consumed by generate.py to render leaf FRR
     VRF/L3VNI/anycast SVIs, per-VNI RD/RT, overlay host bridges, and the
     leaf/server overlay access NICs.
 
-# ============================================================================
-# VALIDATION (ADDON LAYER - NOT CORE ARCHITECTURE)
-# ============================================================================
-
-validation:
-  infrastructure_chaos:
-    tool: "tc netem + custom scripts"
-    phase: "P6"
-    scenarios:
-      - link-down
-      - link-flap
-      - latency-injection
-      - packet-loss
-      - packet-corruption
-      - rack-partition
-      - node-kill
-
-  success_criteria:
-    fabric: "BGP-EVPN fabric stays converged under chaos"
-    availability: ">99% over 10-minute chaos run"
-    max_outage: "<3 seconds"

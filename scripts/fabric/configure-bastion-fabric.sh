@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
-# ==========================================================================
-# configure-bastion-fabric.sh — Configure bastion's fabric interfaces + NAT
-# ==========================================================================
-# Called by setup-server-links.sh via:
-#   vagrant ssh bastion -c "sudo bash -s -- <args>" < this_script
-#
+# configure-bastion-fabric.sh: configure the bastion's fabric interfaces + NAT.
+# Run by setup-server-links.sh: vagrant ssh bastion -c "sudo bash -s -- <args>".
 # Args: mac_a ip_a gw_a mac_b ip_b gw_b prefix
-# ==========================================================================
 set -euo pipefail
 
 mac_a="$1"
@@ -47,8 +42,8 @@ ip addr flush dev "$IF_B" 2>/dev/null || true
 ip addr replace "${ip_b}/${prefix}" dev "$IF_B"
 ip link set "$IF_B" up
 
-# ECMP routes for fabric prefixes (no default route — bastion keeps its own)
-# Retry up to 5 times — nexthop ARP resolution may fail if borders haven't
+# ECMP routes for fabric prefixes (no default route; bastion keeps its own)
+# Retry up to 5 times; nexthop ARP resolution may fail if borders haven't
 # responded yet on newly-attached interfaces.
 for attempt in $(seq 1 5); do
     if ip route replace 10.0.0.0/8 \
@@ -60,7 +55,7 @@ for attempt in $(seq 1 5); do
         echo "  ECMP routes applied (attempt $attempt)"
         break
     fi
-    echo "  Route apply failed (attempt $attempt/5) — waiting for ARP..."
+    echo "  Route apply failed (attempt $attempt/5); waiting for ARP..."
     sleep 2
 done
 

@@ -1,18 +1,7 @@
 #!/usr/bin/env bash
-# ==========================================================================
-# serve.sh — Start/stop the local artifact HTTP server
-# ==========================================================================
-# Serves artifacts/ over HTTP so VMs can install packages and pull binaries
-# without internet access.
-#
-# Binds to 0.0.0.0 so both bake VMs (vagrant-libvirt NAT, ~192.168.121.x)
-# and regular VMs (netwatch-mgmt, 192.168.0.x) can reach the host.
-#
-# Usage:
-#   bash scripts/artifacts/serve.sh start    # start serving
-#   bash scripts/artifacts/serve.sh stop     # stop serving
-#   bash scripts/artifacts/serve.sh status   # check if running
-# ==========================================================================
+# Start/stop a local HTTP server over artifacts/ so VMs can install offline.
+# Binds 0.0.0.0 to reach both bake VMs (192.168.121.x) and mgmt VMs (192.168.0.x).
+# Usage: bash scripts/artifacts/serve.sh {start|stop|status}
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

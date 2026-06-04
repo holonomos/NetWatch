@@ -1,37 +1,9 @@
 #!/usr/bin/env bash
-# ==========================================================================
-# evpn-metrics-collector.sh — Collect EVPN control + L2 data-path metrics
-# ==========================================================================
-# Runs on FRR leaf VTEPs via the evpn-metrics.timer systemd timer. Scrapes
-# vtysh for EVPN state and writes Prometheus textfile format into
-# node_exporter's --collector.textfile.directory, which exposes the metrics
-# alongside node_exporter's own at the leaf's :9100/metrics.
-#
-# Emits two families:
-#   CONTROL PLANE (existing, unchanged names):
-#     netwatch_evpn_vni_count
-#     netwatch_evpn_peers_established
-#     netwatch_evpn_routes_total
-#     netwatch_evpn_remote_vteps
-#   L2 DATA PATH (new — proves real frames cross the overlay; per-VNI labelled):
-#     netwatch_evpn_vni_info{vni,type,vrf}                      = 1
-#     netwatch_evpn_mac_total{vni}                              learned MACs in VNI
-#     netwatch_evpn_mac_local{vni}                              locally-learned MACs
-#     netwatch_evpn_mac_remote{vni}                             remote (over-VXLAN) MACs
-#     netwatch_evpn_arp_total{vni}                              ARP/ND (neigh) entries
-#     netwatch_evpn_arp_remote{vni}                             remote ARP/ND entries
-#     netwatch_evpn_vni_remote_vteps{vni}                       remote VTEPs per VNI
-#   ROLLUPS (unlabelled, for simple single-stat panels):
-#     netwatch_evpn_mac_remote_total                            sum of remote MACs
-#     netwatch_evpn_l2vni_count / netwatch_evpn_l3vni_count
-#
-# A non-zero netwatch_evpn_mac_remote{vni="10000"} is the data-path proof:
-# the leaf learned a PEER server's MAC over VXLAN (Type-2), i.e. an L2 frame
-# crossed the overlay — not the routed underlay.
-#
-# Usage: Run as root (needs vtysh access)
-#   bash /usr/local/bin/evpn-metrics-collector.sh
-# ==========================================================================
+# Collect EVPN control + L2 data-path metrics on FRR leaf VTEPs.
+# Run as root via the evpn-metrics.timer; scrapes vtysh and writes Prometheus
+# textfile format to node_exporter's textfile dir (exposed at :9100/metrics).
+# A non-zero netwatch_evpn_mac_remote{vni="10000"} means the leaf learned a peer
+# server's MAC over VXLAN (Type-2): an L2 frame crossed the overlay.
 set -uo pipefail
 
 TEXTFILE_DIR="/var/lib/node_exporter/textfile"
@@ -63,7 +35,11 @@ EVPN_ROUTES=$(vtysh -c "show bgp l2vpn evpn json" 2>/dev/null | \
 import json,sys
 try:
     d=json.load(sys.stdin)
-    count=d.get('totalRoutes', d.get('numRoutes', 0))
+    # FRR 10.x exposes the EVPN route count as top-level totalPrefix/numPrefix;
+    # older builds used totalRoutes/numRoutes. (Per-RD dicts hold the route
+    # entries themselves, not a count, so the top-level scalar is authoritative.)
+    count=(d.get('totalPrefix') or d.get('numPrefix')
+           or d.get('totalRoutes') or d.get('numRoutes') or 0)
     print(count)
 except Exception as e:
     import sys; sys.stderr.write(f'evpn-metrics-collector: {e}\n')
@@ -86,23 +62,13 @@ except Exception as e:
     print(0)
 " 2>/dev/null || echo 0)
 
-# ==========================================================================
-# L2 DATA-PATH metrics (per-VNI). For every L2 VNI we ask FRR for its MAC and
-# ARP/ND tables and classify local vs remote. Remote == learned over VXLAN
-# from another VTEP (Type-2) == an L2 frame crossed the overlay. The whole
-# per-VNI block is emitted by one Python pass that, for each VNI in
-# `show evpn vni json`, pulls `show evpn mac vni <vni> json` +
-# `show evpn arp-cache vni <vni> json` via a helper. We run vtysh per VNI in
-# bash (simpler/robuster than embedding subprocess calls) and stream the JSON
-# blobs to Python as: <vni> <type> <macjson> <arpjson> per line is awkward, so
-# instead we build the per-VNI Prometheus lines incrementally below.
-# ==========================================================================
+# L2 data-path metrics (per-VNI): query FRR MAC and ARP/ND tables, classify
+# local vs remote. Remote == learned over VXLAN from another VTEP (Type-2).
 
-# Discover the VNI -> type/vrf map once.
-# NOTE: every field is emitted non-empty (empty -> '-'). With IFS=tab, bash
-# collapses ADJACENT tab delimiters (tab is IFS-whitespace), which would shift
-# columns when a field is blank (e.g. L2 VNIs have no vrf). The '-' sentinel
-# keeps the 4 columns aligned; we translate '-' back to '' for the vrf label.
+# Discover the VNI -> type/vrf map once. Emit '-' for empty fields: IFS=tab
+# collapses adjacent tab delimiters, which would shift columns on a blank field
+# (L2 VNIs have no vrf). The '-' sentinel keeps the 4 columns aligned and is
+# translated back to '' on read.
 VNI_MAP=$(echo "$VNI_OUTPUT" | python3 -c "
 import json,sys
 try:
@@ -149,7 +115,7 @@ except Exception:
 
 # Helper: count ARP/ND (neigh) entries for a VNI, classified local/remote.
 # `show evpn arp-cache vni <vni> json` is keyed by IP -> {type: local|remote,...};
-# older syntax is `show evpn neigh vni <vni> json` — try arp-cache then neigh.
+# older syntax is `show evpn neigh vni <vni> json`; try arp-cache then neigh.
 arp_counts() {
     local vni="$1" out
     out=$(vtysh -c "show evpn arp-cache vni $vni json" 2>/dev/null)
@@ -172,8 +138,7 @@ if [ -n "$VNI_MAP" ]; then
     while IFS=$'\t' read -r vni typ vrf rvteps; do
         [ -z "$vni" ] && continue
         rvteps="${rvteps//[^0-9]/}"; rvteps="${rvteps:-0}"
-        # Translate sentinels back ('-' was emitted for empty fields to keep
-        # the tab columns aligned across the bash `read`).
+        # Translate sentinels back to empty strings.
         [ "$typ" = "-" ] && typ=""
         [ "$vrf" = "-" ] && vrf=""
 

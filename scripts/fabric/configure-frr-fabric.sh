@@ -1,16 +1,10 @@
 #!/usr/bin/env bash
-# ==========================================================================
-# configure-frr-fabric.sh — Configure fabric interfaces inside an FRR VM
-# ==========================================================================
-# Called by setup-frr-links.sh via:
-#   vagrant ssh <vm> -c "sudo bash -s -- <args>" < configure-frr-fabric.sh
+# configure-frr-fabric.sh: configure fabric interfaces inside an FRR VM.
+# Run by setup-frr-links.sh: vagrant ssh <vm> -c "sudo bash -s -- <args>" < this.
 #
-# Args: loopback_ip mgmt_ip mac1 name1 ip1 prefix1 mac2 name2 ip2 prefix2 ...
-#
-# Variable-length: processes groups of 4 (mac, name, ip, prefix) after loopback+mgmt.
-# Configures interfaces, loopback, mgmt NM profile, sysctls, NM profiles,
-# restarts FRR + frr_exporter.
-# ==========================================================================
+# Args: loopback_ip mgmt_ip [mac name ip prefix]...  (groups of 4 after the
+# first two). Sets interfaces, loopback, sysctls, NM profiles; restarts FRR +
+# frr_exporter.
 set -euo pipefail
 
 if [ $# -lt 6 ]; then
@@ -98,13 +92,16 @@ while [ $# -ge 4 ]; do
     IP="$3"
     PREFIX="$4"
     shift 4
-    IFACE_COUNT=$((IFACE_COUNT + 1))
 
     # Find the actual interface by MAC (may already be renamed by udev)
     IF_ACTUAL=$(find_if_by_mac "$MAC") || {
         echo "  WARNING: no interface with MAC $MAC (expected $IFNAME) -- NIC not yet attached?"
         continue
     }
+    # Count only interfaces actually found, so the 0-interfaces guard below is
+    # meaningful: a leaf whose NICs never surfaced must not restart FRR with no
+    # fabric IPs and falsely report success.
+    IFACE_COUNT=$((IFACE_COUNT + 1))
 
     # Configure IP
     ip addr flush dev "$IF_ACTUAL" 2>/dev/null || true
@@ -142,7 +139,7 @@ nmcli connection reload 2>/dev/null || true
 
 # --- Validate at least one interface was configured ---
 if [ "$IFACE_COUNT" -eq 0 ]; then
-    echo "  ERROR: 0 fabric interfaces configured — NICs may not be attached yet"
+    echo "  ERROR: 0 fabric interfaces configured; NICs may not be attached yet"
     exit 1
 fi
 

@@ -25,18 +25,29 @@ nuke:                                ## Nuclear: remove bridges, detach NICs, cl
 # VMs
 # ==========================================================================
 
-vms:                                 ## Boot all 31 VMs in correct order (obs → mgmt → FRR → bastion → servers)
+vms: bridges                         ## Boot all 31 VMs (bridges FIRST; FRR + servers in batches of 4 to avoid vagrant-libvirt parallel IP-wait flake)
 	vagrant up obs
 	@echo "Waiting for obs services (DNS, NTP, monitoring)..." && sleep 5
 	vagrant up mgmt
 	@echo "Waiting for mgmt..." && sleep 5
-	vagrant up border-1 border-2 spine-1 spine-2 \
-	         leaf-1a leaf-1b leaf-2a leaf-2b \
-	         leaf-3a leaf-3b leaf-4a leaf-4b
+	@echo "Booting 12 FRR switches in batches of 4..."
+	vagrant up border-1 border-2 spine-1 spine-2
+	@sleep 4
+	vagrant up leaf-1a leaf-1b leaf-2a leaf-2b
+	@sleep 4
+	vagrant up leaf-3a leaf-3b leaf-4a leaf-4b
 	@echo "Waiting for FRR VMs to settle..." && sleep 5
-	vagrant up bastion
+	@echo "Booting bastion (retry for known DHCP-lease flake)..."
+	@for i in 1 2 3; do vagrant up bastion && break || { echo "  bastion up failed (try $$i); reloading..."; vagrant reload bastion 2>/dev/null || true; sleep 5; }; done
 	@echo "Waiting for bastion NAT..." && sleep 3
-	vagrant up
+	@echo "Booting 16 servers in batches of 4..."
+	vagrant up srv-1-1 srv-1-2 srv-1-3 srv-1-4
+	@sleep 4
+	vagrant up srv-2-1 srv-2-2 srv-2-3 srv-2-4
+	@sleep 4
+	vagrant up srv-3-1 srv-3-2 srv-3-3 srv-3-4
+	@sleep 4
+	vagrant up srv-4-1 srv-4-2 srv-4-3 srv-4-4
 
 vms-halt:                            ## Halt all VMs (preserves state)
 	vagrant halt
@@ -71,7 +82,7 @@ frr-restart:                         ## Restart FRR service on all switch VMs
 	done
 
 # ==========================================================================
-# Fabric (individual steps — run in order, or just use 'make up')
+# Fabric (individual steps, in order; or just use 'make up')
 # ==========================================================================
 
 bridges:                             ## Step 1: Create 54 fabric bridges on host

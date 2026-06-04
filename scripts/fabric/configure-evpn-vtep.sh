@@ -1,35 +1,17 @@
 #!/usr/bin/env bash
-# ==========================================================================
-# configure-evpn-vtep.sh — Build the EVPN/VXLAN kernel datapath on a leaf VTEP
-# ==========================================================================
-# Called by setup-evpn.sh via:
-#   vagrant ssh <leaf> -c "sudo bash -s -- <args>" < this_script
+# configure-evpn-vtep.sh: build the EVPN/VXLAN kernel datapath on a leaf VTEP.
+# Run by setup-evpn.sh: vagrant ssh <leaf> -c "sudo bash -s -- <args>" < this.
 #
-# Builds, idempotently, the full distributed-IRB EVPN datapath (symmetric
-# L3VNI + anycast gateway):
-#   * VRF Tenant-A + symmetric L3VNI 10999 (br-l3vni, vlan-aware, svi-l3vni)
-#   * One PLAIN bridge per L2VNI  (br-vni<l2vni> + vxlan<l2vni>), enslaved to
-#     the VRF, with an anycast-gateway SVI (same IP + MAC on every leaf)
-#   * Enslaves the leaf overlay access NICs (eth-ovl / eth-ovl-b) — pure L2,
-#     NO IP — into the matching L2VNI bridge so server frames cross the overlay
-#   * systemd timer for the EVPN metrics collector
-#   * LAST: restart FRR so zebra ingests the kernel VNIs/VRF/SVIs
+# Builds the distributed-IRB datapath idempotently: VRF Tenant-A + symmetric
+# L3VNI 10999, one vlan-aware bridge per L2VNI with a dedicated anycast-gateway
+# SVI (same IP+MAC on every leaf), and enslaves the leaf overlay access NICs.
+# Restarts FRR last so zebra ingests the kernel VNIs/VRF/SVIs.
 #
-# Arg contract (BACKWARD COMPATIBLE — a 2-arg call still builds a plain VTEP):
-#   configure-evpn-vtep.sh <loopback> <l2vni_primary> \
-#       [<l3vni> <vrf> <l3vlan> <anycast_mac> <tenantspec> ...]
-#
-#   tenantspec = "l2vni:vlan:gwcidr:sviname"
-#       e.g. 10000:99:10.99.0.1/24:svi-vni10000
-#
-# Example (leaf-1a), exactly what setup-evpn.sh emits:
-#   configure-evpn-vtep.sh 10.0.3.1 10000 10999 Tenant-A 999 00:00:5e:00:01:99 \
-#       10000:99:10.99.0.1/24:svi-vni10000 10001:98:10.99.1.1/24:svi-vni10001
-#
-# Every create is guarded (|| true / show-before-add) so a second pass — the
-# `make overlay` re-run AFTER `wire` — only enslaves the now-present access
-# NICs and restarts FRR. nolearning is correct: FRR owns MAC learning.
-# ==========================================================================
+# Usage: configure-evpn-vtep.sh <loopback> <l2vni_primary> \
+#            [<l3vni> <vrf> <l3vlan> <anycast_mac> <tenantspec>...]
+#   tenantspec = "l2vni:vlan:gwcidr:sviname"  e.g. 10000:99:10.99.0.1/24:svi-vni10000
+# A 2-arg call builds a plain VTEP; full args build the IRB datapath.
+# nolearning is set because FRR owns MAC learning.
 set -euo pipefail
 
 LOOPBACK="${1:?usage: configure-evpn-vtep.sh <loopback> <l2vni_primary> [l3vni vrf l3vlan anycast_mac tenantspec...]}"
@@ -43,13 +25,10 @@ TENANTSPECS=("$@")          # remaining args are tenantspecs (may be empty)
 
 VXLAN_DSTPORT=4789
 
-# ==========================================================================
-# Legacy / no-tenant mode: build the plain VTEP exactly as before so a bare
-# 2-arg invocation keeps working (backward compatibility for any caller that
-# has not adopted the L3VNI/tenant arg contract yet).
-# ==========================================================================
+# No-tenant mode: a 2-arg call (loopback + primary L2VNI) builds a plain VTEP
+# without the VRF/L3VNI/anycast material.
 if [ -z "$L3VNI" ] || [ ${#TENANTSPECS[@]} -eq 0 ]; then
-    echo "  [legacy] no L3VNI/tenant args — building plain VTEP for VNI $L2VNI_PRIMARY"
+    echo "  no L3VNI/tenant args: building plain VTEP for VNI $L2VNI_PRIMARY"
     BR="br-vni${L2VNI_PRIMARY}"
     VX="vxlan${L2VNI_PRIMARY}"
     if ! ip link show "$VX" &>/dev/null; then
@@ -67,16 +46,12 @@ if [ -z "$L3VNI" ] || [ ${#TENANTSPECS[@]} -eq 0 ]; then
     [ "$current_master" != "$BR" ] && ip link set "$VX" master "$BR"
     ip link set "$VX" up
 else
-    # ======================================================================
-    # Full distributed-IRB datapath
-    # ======================================================================
+    # Full distributed-IRB datapath.
     echo "  [evpn] VTEP $LOOPBACK : L3VNI $L3VNI VRF $VRF (vlan $L3VLAN) anycast $ANYCAST_MAC"
     echo "  [evpn] tenants: ${TENANTSPECS[*]}"
 
-    # ----------------------------------------------------------------------
-    # 4.1 VRF + L3VNI (symmetric IRB)
-    # ----------------------------------------------------------------------
-    # VRF table id is fixed by the design (topology.yml evpn.l3vni_table: 1099).
+    # VRF + L3VNI (symmetric IRB). VRF table id fixed by topology.yml
+    # (evpn.l3vni_table: 1099).
     VRF_TABLE=1099
     if ! ip link show "$VRF" &>/dev/null; then
         ip link add "$VRF" type vrf table "$VRF_TABLE"
@@ -86,16 +61,14 @@ else
 
     if ! ip link show br-l3vni &>/dev/null; then
         ip link add br-l3vni type bridge
-        # One-time bridge settings; writing the same value on a re-run is a
-        # harmless no-op, but keeping them inside the create-guard avoids any
-        # sysfs write racing a just-changed VRF master under `set -e`.
+        # Settings inside the create-guard: avoids a sysfs write racing a
+        # just-changed VRF master under set -e.
         echo 1 > /sys/class/net/br-l3vni/bridge/vlan_filtering
         echo 0 > /sys/class/net/br-l3vni/bridge/stp_state
         echo "  Created br-l3vni (vlan-aware, VRF $VRF)"
     fi
-    # Guarded: `ip link set ... master` returns RTNETLINK 'File exists' (rc 2)
-    # if the device is ALREADY enslaved to the VRF, which would abort under
-    # `set -e` on the idempotent `make overlay` re-run.
+    # ip link set ... master returns RTNETLINK 'File exists' (rc 2) if already
+    # enslaved, which aborts under set -e on the idempotent re-run; so guard it.
     l3br_master=$(ip -o link show br-l3vni 2>/dev/null | grep -oP 'master \K\S+' || true)
     [ "$l3br_master" != "$VRF" ] && ip link set br-l3vni master "$VRF"
     ip link set br-l3vni up
@@ -117,19 +90,21 @@ else
         ip link add link br-l3vni name svi-l3vni type vlan id "$L3VLAN"
         echo "  Created svi-l3vni (numberless, VRF $VRF)"
     fi
-    # Guarded master assignment (idempotent re-run safety under `set -e`).
+    # Guarded master assignment (idempotent re-run safety under set -e).
     svil3_master=$(ip -o link show svi-l3vni 2>/dev/null | grep -oP 'master \K\S+' || true)
     [ "$svil3_master" != "$VRF" ] && ip link set svi-l3vni master "$VRF"
+    # Stable fabric-wide L3VNI router-MAC: pinned so the RMAC in Type-2/Type-5
+    # stays constant across FRR restarts. Same on every leaf; distinct from the
+    # anycast GW MAC.
+    ip link set svi-l3vni address 00:00:5e:00:01:98 2>/dev/null || true
     ip link set svi-l3vni up                                    # numberless; FRR routes via it
 
-    # ----------------------------------------------------------------------
-    # 4.2 Per-tenant plain L2VNI bridge + anycast SVI
-    #     (one plain bridge : one vxlan : one access NIC)
-    # ----------------------------------------------------------------------
+    # Per-tenant vlan-aware L2VNI bridge (pure L2) + dedicated anycast SVI:
+    # one bridge : one vxlan : one access NIC : one VLAN SVI in the VRF.
     for spec in "${TENANTSPECS[@]}"; do
         IFS=':' read -r l2vni vlan gwcidr sviname rest <<< "$spec"
         if [ -z "$l2vni" ] || [ -z "$vlan" ] || [ -z "$gwcidr" ] || [ -z "$sviname" ]; then
-            echo "  WARNING: malformed tenantspec '$spec' (want l2vni:vlan:gwcidr:sviname) — skipping"
+            echo "  WARNING: malformed tenantspec '$spec' (want l2vni:vlan:gwcidr:sviname); skipping"
             continue
         fi
         BR="br-vni${l2vni}"
@@ -137,13 +112,12 @@ else
 
         if ! ip link show "$BR" &>/dev/null; then
             ip link add "$BR" type bridge
+            echo 1 > "/sys/class/net/$BR/bridge/vlan_filtering"
             echo 0 > "/sys/class/net/$BR/bridge/stp_state"
-            echo "  Created $BR (plain, STP disabled)"
+            echo "  Created $BR (vlan-aware, pure L2, STP disabled)"
         fi
-        # Guarded: enslave L2 bridge to VRF (IRB). Skip if already a member so
-        # the idempotent re-run does not hit RTNETLINK 'File exists' under set -e.
-        br_master=$(ip -o link show "$BR" 2>/dev/null | grep -oP 'master \K\S+' || true)
-        [ "$br_master" != "$VRF" ] && ip link set "$BR" master "$VRF"
+        # L2VNI bridge stays pure L2 (NOT VRF-enslaved); the routed anycast
+        # gateway lives on the dedicated VLAN SVI ($sviname) created below.
         ip link set "$BR" up
 
         if ! ip link show "$VX" &>/dev/null; then
@@ -155,50 +129,51 @@ else
         [ "$vx_master" != "$BR" ] && ip link set "$VX" master "$BR"
         ip link set "$VX" up
         bridge link set dev "$VX" neigh_suppress on
+        # vlan-aware mapping (mirrors the L3VNI): VXLAN port + bridge carry the
+        # tenant access VLAN, untagged on the wire (VLAN is bridge-local).
+        bridge vlan add dev "$VX" vid "$vlan" pvid untagged 2>/dev/null || true
+        bridge vlan add dev "$VX" vid "$vlan" tunnel_info id "$l2vni" 2>/dev/null || true
+        bridge vlan add dev "$BR" vid "$vlan" self 2>/dev/null || true
+        # Per-VLAN ARP/ND suppression so the local SVI answers ARP for the GW IP.
+        bridge vlan set dev "$VX" vid "$vlan" neigh_suppress on 2>/dev/null || true
 
-        # Anycast gateway on the L2VNI bridge interface itself (plain
-        # bridge-per-VNI IRB). $BR is already enslaved to the VRF above, so
-        # giving the bridge the anycast IP+MAC makes the bridge itself the SVI
-        # (the traditional-bridge model). On a plain (non-vlan-aware) bridge the
-        # server's untagged frames never reach a VLAN sub-interface, so the
-        # gateway must live on the bridge, not on a "br-vniX.vlan" sub-interface.
-        # `ip link del $sviname` clears any leftover VLAN-style SVI. IP+MAC must
-        # match frr.conf 'interface $BR'.
-        ip link del "$sviname" 2>/dev/null || true
-        ip link set "$BR" address "$ANYCAST_MAC" 2>/dev/null || true
-        gwip="${gwcidr%%/*}"
-        if ! ip addr show dev "$BR" 2>/dev/null | grep -q "$gwip"; then
-            ip addr add "$gwcidr" dev "$BR" 2>/dev/null || true
-        fi
-        ip link set "$BR" up
-        echo "  Anycast GW $gwcidr ($ANYCAST_MAC) on bridge $BR (SVI = bridge interface)"
+        # Anycast gateway on a dedicated per-L2VNI VLAN SVI ($sviname on $BR),
+        # enslaved to the VRF. IP+MAC MUST match frr.conf 'interface $sviname'.
+        ip link show "$sviname" &>/dev/null || \
+            ip link add link "$BR" name "$sviname" type vlan id "$vlan"
+        svi_master=$(ip -o link show "$sviname" 2>/dev/null | grep -oP 'master \K\S+' || true)
+        [ "$svi_master" != "$VRF" ] && ip link set "$sviname" master "$VRF"
+        ip link set "$sviname" address "$ANYCAST_MAC" 2>/dev/null || true
+        ip addr replace "$gwcidr" dev "$sviname"
+        ip link set "$sviname" up
+        echo "  Anycast GW $gwcidr ($ANYCAST_MAC) on dedicated SVI $sviname (vlan $vlan, VRF $VRF); $BR pure L2"
     done
 
-    # ----------------------------------------------------------------------
-    # 4.3 Access ports: enslave the leaf overlay NICs (pure L2, NO IP).
-    #     Attached during `fabric`; renamed by udev to eth-ovl / eth-ovl-b.
-    #     If they do not exist yet (first EVPN pass, before `wire`) this is a
-    #     no-op completed by the `make overlay` re-run.
-    # ----------------------------------------------------------------------
+    # Access ports: enslave the leaf overlay NICs (pure L2, no IP), renamed by
+    # udev to eth-ovl / eth-ovl-b. If absent on the first EVPN pass (before
+    # wire), this is a no-op completed by the make overlay re-run.
     if ip link show eth-ovl &>/dev/null; then
         ovl_master=$(ip -o link show eth-ovl 2>/dev/null | grep -oP 'master \K\S+' || true)
         [ "$ovl_master" != "br-vni10000" ] && ip link set eth-ovl master br-vni10000
         ip link set eth-ovl up
-        echo "  Enslaved eth-ovl -> br-vni10000 (tenant-a access port)"
+        # PVID-tag untagged server frames into tenant-a VLAN 99 (a vlan-aware
+        # bridge drops untagged frames otherwise).
+        bridge vlan add dev eth-ovl vid 99 pvid untagged 2>/dev/null || true
+        echo "  Enslaved eth-ovl -> br-vni10000 (tenant-a access port, vlan 99)"
     else
-        echo "  eth-ovl not present yet — access enslave deferred to 'make overlay'"
+        echo "  eth-ovl not present yet; access enslave deferred to 'make overlay'"
     fi
     if ip link show eth-ovl-b &>/dev/null; then
         ovlb_master=$(ip -o link show eth-ovl-b 2>/dev/null | grep -oP 'master \K\S+' || true)
         [ "$ovlb_master" != "br-vni10001" ] && ip link set eth-ovl-b master br-vni10001
         ip link set eth-ovl-b up
-        echo "  Enslaved eth-ovl-b -> br-vni10001 (tenant-b access port)"
+        # PVID-tag untagged server frames into tenant-b VLAN 98.
+        bridge vlan add dev eth-ovl-b vid 98 pvid untagged 2>/dev/null || true
+        echo "  Enslaved eth-ovl-b -> br-vni10001 (tenant-b access port, vlan 98)"
     fi
 fi
 
-# ==========================================================================
-# 4.4 systemd timer for the EVPN metrics collector (UNCHANGED behaviour)
-# ==========================================================================
+# systemd timer for the EVPN metrics collector.
 mkdir -p /usr/local/bin
 
 cat > /etc/systemd/system/evpn-metrics.service <<EOF
@@ -222,18 +197,71 @@ EOF
 systemctl daemon-reload
 systemctl enable --now evpn-metrics.timer 2>/dev/null || true
 
-# ==========================================================================
-# 4.5 LAST: restart FRR so zebra ingests the kernel VNIs / VRF / SVIs.
-#     (FRR auto-classifies VNI 10999 as the L3VNI for VRF Tenant-A once the
-#      kernel binding exists; the L2VNIs become Type-2/3 capable.)
-# ==========================================================================
+# Restart FRR last so zebra ingests the kernel VNIs/VRF/SVIs. FRR
+# auto-classifies VNI 10999 as the L3VNI for VRF Tenant-A once the kernel
+# binding exists; the L2VNIs become Type-2/3 capable.
 if [ -n "$L3VNI" ] && [ ${#TENANTSPECS[@]} -gt 0 ]; then
     systemctl restart frr 2>/dev/null || echo "  WARNING: frr restart failed (will retry on next pass)"
     echo "  FRR restarted to ingest VNIs/VRF/SVIs"
 fi
 
-# --- Informational: what FRR now sees ---
+# Re-pin anycast SVI L3 state after the FRR restart (restart can clear it) and
+# persist for reboots. MAC/IP must match frr.conf.j2.
+if [ -n "$L3VNI" ] && [ ${#TENANTSPECS[@]} -gt 0 ]; then
+    # VRF master + global forwarding.
+    sysctl -w "net.ipv4.conf.${VRF}.forwarding=1" >/dev/null 2>&1 || true
+    sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+
+    # L3VNI transit SVI (symmetric-IRB routed path between leaves).
+    ip link set svi-l3vni up 2>/dev/null || true
+    sysctl -w net.ipv4.conf.svi-l3vni.forwarding=1 >/dev/null 2>&1 || true
+    sysctl -w net.ipv4.conf.svi-l3vni.rp_filter=2 >/dev/null 2>&1 || true
+
+    # Per-tenant anycast SVIs (the L2VNI bridge interfaces).
+    for spec in "${TENANTSPECS[@]}"; do
+        IFS=':' read -r l2vni vlan gwcidr sviname rest <<< "$spec"
+        [ -n "$l2vni" ] && [ -n "$sviname" ] && [ -n "$gwcidr" ] || continue
+        ip link set "$sviname" address "$ANYCAST_MAC" 2>/dev/null || true
+        ip addr replace "$gwcidr" dev "$sviname" 2>/dev/null || true
+        ip link set "$sviname" up 2>/dev/null || true
+        # Bounded carrier wait, max 10s.
+        for i in $(seq 1 10); do
+            ip link show "$sviname" 2>/dev/null | grep -q 'LOWER_UP' && break
+            sleep 1
+        done
+        # Flush the SVI ARP cache so it re-arms after the FRR restart. IP
+        # neighbor table only; does not touch the bridge MAC FDB.
+        ip neigh flush dev "$sviname" 2>/dev/null || true
+        sysctl -w "net.ipv4.conf.${sviname}.forwarding=1" >/dev/null 2>&1 || true
+        sysctl -w "net.ipv4.conf.${sviname}.rp_filter=2" >/dev/null 2>&1 || true
+        sysctl -w "net.ipv4.conf.${sviname}.arp_ignore=0" >/dev/null 2>&1 || true
+        sysctl -w "net.ipv4.conf.${sviname}.arp_accept=1" >/dev/null 2>&1 || true
+        sysctl -w "net.ipv4.conf.${sviname}.arp_announce=0" >/dev/null 2>&1 || true
+        echo "  Re-asserted anycast SVI $sviname ($gwcidr / $ANYCAST_MAC) + L3 sysctls"
+    done
+
+    # Persist for later boots. Keys for the known SVIs; harmless if absent.
+    cat > /etc/sysctl.d/99-netwatch-evpn-svi.conf <<'SYSCTLEOF' || true
+# NetWatch: EVPN anycast-SVI L3 datapath sysctls (persisted)
+net.ipv4.ip_forward = 1
+net.ipv4.conf.svi-l3vni.forwarding = 1
+net.ipv4.conf.svi-l3vni.rp_filter = 2
+net.ipv4.conf.svi-vni10000.forwarding = 1
+net.ipv4.conf.svi-vni10000.rp_filter = 2
+net.ipv4.conf.svi-vni10000.arp_ignore = 0
+net.ipv4.conf.svi-vni10000.arp_accept = 1
+net.ipv4.conf.svi-vni10000.arp_announce = 0
+net.ipv4.conf.svi-vni10001.forwarding = 1
+net.ipv4.conf.svi-vni10001.rp_filter = 2
+net.ipv4.conf.svi-vni10001.arp_ignore = 0
+net.ipv4.conf.svi-vni10001.arp_accept = 1
+net.ipv4.conf.svi-vni10001.arp_announce = 0
+SYSCTLEOF
+    sysctl --system >/dev/null 2>&1 || true
+fi
+
+# Informational: what FRR now sees.
 echo "  EVPN datapath summary:"
-vtysh -c "show evpn vni" 2>/dev/null | head -6 || echo "  (FRR not aware of VNIs yet — convergence gate runs in setup-evpn.sh)"
+vtysh -c "show evpn vni" 2>/dev/null | head -6 || echo "  (FRR not aware of VNIs yet; convergence gate runs in setup-evpn.sh)"
 
 echo "  VTEP $LOOPBACK configured (primary L2VNI $L2VNI_PRIMARY${L3VNI:+, L3VNI $L3VNI, VRF $VRF})"

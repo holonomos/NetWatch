@@ -1,24 +1,23 @@
 #!/usr/bin/env bash
-# NetWatch — Chaos Engineering Shared Library
+# NetWatch: Chaos Engineering Shared Library
 # Sourced by all chaos scripts. Not executable on its own.
 #
 # Provides:
-#   BRIDGE_MAP[]      — associative array: "nodeA:nodeB" -> bridge name (both directions)
-#   FRR_NODES[]       — list of all 12 FRR VM names
-#   RACK_LEAFS[]      — associative array: "rack-N" -> "leaf-Na leaf-Nb"
-#   resolve_bridge()  — look up bridge for a node pair
-#   find_veths()      — find host-side veth/tap interfaces on a bridge
-#   annotate()        — POST a Grafana annotation
-#   log_chaos()       — timestamped log output
-#   require_args()    — argument count validation
+#   BRIDGE_MAP[]      : associative array "nodeA:nodeB" -> bridge name (both directions)
+#   FRR_NODES[]       : list of all 12 FRR VM names
+#   RACK_LEAFS[]      : associative array "rack-N" -> "leaf-Na leaf-Nb"
+#   resolve_bridge()  : look up bridge for a node pair
+#   find_veths()      : find host-side veth/tap interfaces on a bridge
+#   annotate()        : POST a Grafana annotation
+#   log_chaos()       : timestamped log output
+#   require_args()    : argument count validation
 
 # --- Configuration ---
 GRAFANA_URL="${GRAFANA_URL:-http://192.168.0.4:3000}"
 GRAFANA_USER="${GRAFANA_USER:-admin}"
 GRAFANA_PASS="${GRAFANA_PASS:-admin}"
 # Derive libvirt domain prefix from the project root basename (matches scripts/fabric/*.sh).
-# Use BASH_SOURCE (not $0) because this file is sourced: $0 would be the calling script.
-# lib.sh lives in scripts/chaos/, so the project root is two levels up.
+# Use BASH_SOURCE (not $0): this file is sourced, so $0 is the calling script.
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VIRSH_PREFIX="$(basename "$PROJECT_ROOT")"
 
@@ -112,6 +111,14 @@ declare -A BRIDGE_MAP=(
     [leaf-4a:srv-4-4]=br052     [srv-4-4:leaf-4a]=br052
     [leaf-4b:srv-4-4]=br053     [srv-4-4:leaf-4b]=br053
 )
+
+# --- Generated overrides (single source of truth: topology.yml) ---
+# Source generated map after the hardcoded arrays so it wins when present;
+# hardcoded arrays are the fallback. Re-declares BRIDGE_MAP, FRR_NODES,
+# RACK_LEAFS and adds the EVPN overlay access links (leaf <-> br-ovl-*).
+GEN_BRIDGE_MAP="$PROJECT_ROOT/generated/chaos/bridge-map.sh"
+# shellcheck source=/dev/null
+[ -f "$GEN_BRIDGE_MAP" ] && source "$GEN_BRIDGE_MAP"
 
 # --- Functions ---
 

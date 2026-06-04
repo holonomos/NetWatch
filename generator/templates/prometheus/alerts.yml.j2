@@ -1,0 +1,42 @@
+# NetWatch: Prometheus alert rules
+# Generated from topology.yml: DO NOT HAND-EDIT
+#
+# Conservative rules over metrics confirmed to exist in this lab:
+#   up                              (Prometheus scrape liveness)
+#   frr_bgp_peer_state              (frr_exporter; 1 == Established)
+#   netwatch_evpn_peers_established (evpn-metrics-collector.sh textfile metric)
+# No SLO/latency thresholds are asserted here (those are not measured).
+
+groups:
+  - name: netwatch-availability
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scrape target down: {{ "{{" }} $labels.instance {{ "}}" }} ({{ "{{" }} $labels.job {{ "}}" }})"
+          description: "Prometheus cannot scrape {{ "{{" }} $labels.instance {{ "}}" }} for over 1m."
+
+  - name: netwatch-bgp
+    rules:
+      - alert: BGPSessionDown
+        expr: frr_bgp_peer_state != 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "BGP session not Established on {{ "{{" }} $labels.instance {{ "}}" }}"
+          description: "frr_bgp_peer_state for peer {{ "{{" }} $labels.peer {{ "}}" }} on {{ "{{" }} $labels.instance {{ "}}" }} has been != Established (1) for over 1m."
+
+  - name: netwatch-evpn
+    rules:
+      - alert: EVPNNoPeers
+        expr: netwatch_evpn_peers_established == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No EVPN peers Established on {{ "{{" }} $labels.instance {{ "}}" }}"
+          description: "Leaf VTEP {{ "{{" }} $labels.instance {{ "}}" }} reports zero Established L2VPN-EVPN peers for over 2m (overlay control plane down)."

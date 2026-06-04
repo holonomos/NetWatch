@@ -25,8 +25,8 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "FRR exporters up",
-      "description": "Count of FRR scrape targets currently up (of 12).",
+      "title": "FRR up",
+      "description": "FRR scrape targets currently up, of 12.",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -97,8 +97,8 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "Node exporters up",
-      "description": "Count of node_exporter scrape targets currently up.",
+      "title": "Nodes up",
+      "description": "node_exporter scrape targets currently up, of 19.",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -125,7 +125,7 @@
               },
               {
                 "color": "green",
-                "value": 18
+                "value": 19
               }
             ]
           },
@@ -169,8 +169,8 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Targets healthy",
-      "description": "Total Prometheus scrape targets currently up across all jobs.",
+      "title": "BGP Established",
+      "description": "BGP peers in Established state (frr_bgp_peer_state == 1).",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -197,7 +197,7 @@
               },
               {
                 "color": "green",
-                "value": 30
+                "value": 18
               }
             ]
           },
@@ -205,8 +205,7 @@
             "mode": "thresholds"
           },
           "unit": "short",
-          "min": 0,
-          "max": 31
+          "min": 0
         },
         "overrides": []
       },
@@ -230,9 +229,9 @@
             "type": "prometheus",
             "uid": "netwatch-prometheus"
           },
-          "expr": "count(up == 1) OR on() vector(0)",
+          "expr": "count(frr_bgp_peer_state == 1) OR on() vector(0)",
           "instant": true,
-          "legendFormat": "Targets up",
+          "legendFormat": "Established",
           "range": false,
           "refId": "A"
         }
@@ -241,8 +240,8 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Availability ratio",
-      "description": "Fraction of all scrape targets that are up (avg of up).",
+      "title": "BFD up",
+      "description": "BFD sessions in up state (frr_bfd_peer_state == 1).",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -251,6 +250,77 @@
         "h": 5,
         "w": 4,
         "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 18
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "netwatch-prometheus"
+          },
+          "expr": "count(frr_bfd_peer_state == 1) OR on() vector(0)",
+          "instant": true,
+          "legendFormat": "BFD up",
+          "range": false,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Availability",
+      "description": "Fraction of all scrape targets up (avg of up).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "netwatch-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
         "y": 0
       },
       "fieldConfig": {
@@ -311,81 +381,10 @@
       ]
     },
     {
-      "id": 5,
-      "type": "stat",
-      "title": "BGP sessions Established",
-      "description": "Number of BGP peers in Established state (frr_bgp_peer_state == 1).",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "netwatch-prometheus"
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 4,
-        "x": 16,
-        "y": 0
-      },
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              },
-              {
-                "color": "green",
-                "value": 18
-              }
-            ]
-          },
-          "color": {
-            "mode": "thresholds"
-          },
-          "unit": "short",
-          "min": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "netwatch-prometheus"
-          },
-          "expr": "count(frr_bgp_peer_state == 1) OR on() vector(0)",
-          "instant": true,
-          "legendFormat": "Established",
-          "range": false,
-          "refId": "A"
-        }
-      ]
-    },
-    {
       "id": 6,
       "type": "stat",
       "title": "EVPN remote MACs",
-      "description": "Total MACs learned from remote VTEPs over VXLAN. Green once any remote MAC is present.",
+      "description": "MACs learned from remote VTEPs over VXLAN. Green once any remote MAC is present.",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -451,8 +450,8 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Target health (up{job=~\"frr|node\"})",
-      "description": "Per-target up/down over time. 1 = up, 0 = down. stepAfter shows exact transition points.",
+      "title": "Target health",
+      "description": "Per-target up state over time for FRR and node jobs. 1 = up, 0 = down.",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -525,14 +524,14 @@
     {
       "id": 8,
       "type": "timeseries",
-      "title": "BGP sessions Established over time",
+      "title": "BGP sessions Established",
       "description": "Count of BGP peers in Established state (frr_bgp_peer_state == 1) over time. Dips indicate session flaps.",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
       },
       "gridPos": {
-        "h": 8,
+        "h": 7,
         "w": 24,
         "x": 0,
         "y": 13
@@ -600,17 +599,17 @@
     {
       "id": 9,
       "type": "table",
-      "title": "DOWN targets (up == 0)",
-      "description": "Any scrape target currently down. Empty table = full fabric health, no outages.",
+      "title": "Down targets",
+      "description": "Scrape targets currently down (up == 0). An empty table means all targets are up.",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
       },
       "gridPos": {
-        "h": 9,
+        "h": 7,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -625,7 +624,7 @@
                 "0": {
                   "color": "red",
                   "index": 0,
-                  "text": "DOWN"
+                  "text": "Down"
                 }
               },
               "type": "value"
@@ -708,12 +707,50 @@
             "indexByName": {
               "job": 0,
               "instance": 1,
-              "Value": 2
+              "role": 2,
+              "Value": 3
             },
             "renameByName": {
               "Value": "State"
             }
           }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "logs",
+      "title": "Recent error and down log lines",
+      "description": "{job=~\".+\"} matching error, down, or fail (case-insensitive) across all log streams.",
+      "datasource": {
+        "type": "loki",
+        "uid": "netwatch-loki"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "netwatch-loki"
+          },
+          "expr": "{job=~\".+\"} |~ \"(?i)error|down|fail\"",
+          "queryType": "range",
+          "refId": "A"
         }
       ]
     }
@@ -734,7 +771,7 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "NetWatch — NOC Overview",
+  "title": "NetWatch - NOC Overview",
   "uid": "netwatch-noc-overview",
   "version": 1,
   "weekStart": ""

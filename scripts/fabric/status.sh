@@ -1,12 +1,9 @@
 #!/bin/bash
-# NetWatch — Status
-# Generated from topology.yml — DO NOT HAND-EDIT
+# NetWatch: Status
+# Generated from topology.yml: DO NOT HAND-EDIT
 #
-# Shows the state of all fabric components:
-#   - FRR VMs (running/stopped)
-#   - Bridges (up/missing)
-#   - Management network reachability
-#   - BGP session summary (if VMs are running)
+# Health report: FRR VM state, fabric/overlay bridges, mgmt reachability,
+# BGP + EVPN summary, and the north-south path.
 
 set -uo pipefail
 

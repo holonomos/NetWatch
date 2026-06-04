@@ -1,6 +1,6 @@
 !
-! NetWatch — FRR configuration for {{ hostname }}
-! Generated from topology.yml — DO NOT HAND-EDIT
+! NetWatch: FRR configuration for {{ hostname }}
+! Generated from topology.yml: DO NOT HAND-EDIT
 !
 frr defaults datacenter
 hostname {{ hostname }}
@@ -26,7 +26,7 @@ exit-vrf
 !
 ! --- Anycast-gateway SVIs (identical IP + MAC on EVERY leaf) ---
 {% for t in tenants %}
-interface br-vni{{ t.l2vni }}
+interface svi-vni{{ t.l2vni }}
  ip address {{ t.anycast_gw }}
  mac-address {{ anycast_gw_mac }}
  ip forwarding
@@ -35,6 +35,7 @@ interface br-vni{{ t.l2vni }}
 ! --- L3VNI transit SVI (numberless; kernel-bound into VRF {{ l3vni_vrf }}) ---
 interface svi-l3vni
  description L3VNI {{ l3vni }} symmetric-IRB transit ({{ l3vni_vrf }})
+ mac-address 00:00:5e:00:01:98
 !
 {% endif %}
 {% if bastion_gateways %}

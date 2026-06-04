@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
-# NetWatch — Chaos: Link Flap
-# Toggles a fabric link down/up repeatedly to stress BFD and BGP convergence.
-#
-# Usage:
-#   bash scripts/chaos/link-flap.sh <node-a> <node-b> [--interval SECS] [--count N]
-#
-# Defaults: 5 second interval, 5 cycles.
-# Each cycle: bridge down -> sleep interval -> bridge up -> sleep interval.
-#
-# Examples:
-#   bash scripts/chaos/link-flap.sh spine-1 leaf-1a
-#   bash scripts/chaos/link-flap.sh border-1 spine-2 --interval 3 --count 10
+# Chaos: flap a fabric link (bridge down/up in cycles) to stress BFD/BGP convergence.
+# Each cycle: bridge down -> sleep interval -> bridge up -> sleep interval. See --help.
 
 set -euo pipefail
 

@@ -1,31 +1,7 @@
 #!/usr/bin/env bash
-# ==========================================================================
-# build.sh — Build the NetWatch artifact depot (fabric-only)
-# ==========================================================================
-# Downloads artifacts needed for an offline fabric deployment:
-#   - Base Fedora Vagrant box
-#   - RPMs (via Docker + Fedora container)
-#   - Binary tools (node_exporter, frr_exporter, promtail, loki, prometheus, grafana)
-#
-# Run ONCE on a machine with internet + Docker. After this, the fabric can
-# boot and configure without network access.
-#
-# Prerequisites:
-#   - Docker (for RPM download)
-#   - createrepo_c (dnf install createrepo_c)
-#   - Internet access
-#
-# Usage:
-#   bash scripts/artifacts/build.sh
-#
-# Bootstrap sequence:
-#   1. make artifacts-build   ← YOU ARE HERE
-#   2. make bake              (builds golden box)
-#   3. make box-register      (registers box with vagrant)
-#   4. make generate          (generates configs)
-#   5. make artifacts-serve   (starts HTTP server)
-#   6. make vms               (boots all VMs — NO internet)
-# ==========================================================================
+# Build the offline artifact depot: Fedora box, RPMs (via Docker), binaries.
+# Run once on a host with internet + Docker. Requires createrepo_c.
+# Usage: bash scripts/artifacts/build.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -130,7 +106,7 @@ RPM_LIST=(
   bash-completion
   tar
   bpftool
-  # Extras (dev tools, debugging, stress — installed post-boot via provision-extras.sh)
+  # Extras (dev tools, debugging, stress; installed post-boot via provision-extras.sh)
   wget
   git
   vim-enhanced

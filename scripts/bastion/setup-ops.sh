@@ -1,14 +1,6 @@
 #!/usr/bin/env bash
-# ==========================================================================
-# setup-ops.sh — Configure bastion as the operations desk
-# ==========================================================================
-# Sets up bastion with everything an operator needs:
-#   - Shell aliases for common fabric operations
-#   - DNAT rules for Grafana/Prometheus access from host
-#   - SSH config for jump access to all nodes
-#
-# Run from host: bash scripts/bastion/setup-ops.sh
-# ==========================================================================
+# Configure the bastion ops desk: shell aliases, DNAT for Grafana/Prometheus,
+# and SSH jump config for all nodes. Run from host.
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -22,7 +14,6 @@ echo "  Setting up shell environment..."
 vagrant ssh bastion -c "sudo bash -s" <<'OPS'
 set -e
 
-# MOTD
 cat > /etc/motd <<'MOTD'
 
   ╔══════════════════════════════════════════╗
@@ -34,7 +25,6 @@ cat > /etc/motd <<'MOTD'
 
 MOTD
 
-# Shell aliases
 cat > /etc/profile.d/netwatch.sh <<'ALIASES'
 # NetWatch bastion aliases (SSH jump + fabric inspection)
 alias bgp='for n in spine-1 spine-2; do echo "=== $n ==="; ssh -o StrictHostKeyChecking=no vagrant@$n "sudo vtysh -c \"show bgp summary\"" 2>/dev/null; done'
@@ -43,7 +33,7 @@ alias fabric-status='for n in border-1 border-2 spine-1 spine-2; do echo "=== $n
 alias routes='for n in spine-1 leaf-1a border-1; do echo "=== $n ==="; ssh -o StrictHostKeyChecking=no vagrant@$n "sudo vtysh -c \"show ip route summary\"" 2>/dev/null; done'
 ALIASES
 
-# SSH config for passwordless jump to all nodes
+# Passwordless jump to all nodes
 cat > /home/vagrant/.ssh/config <<'SSHCONF'
 Host srv-* leaf-* spine-* border-* mgmt obs
     StrictHostKeyChecking no

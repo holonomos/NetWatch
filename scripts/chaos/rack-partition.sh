@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
-# NetWatch — Chaos: Rack Partition
-# Isolates an entire rack by bringing down all 4 spine-to-leaf links.
-# Each rack has 2 leafs, each connected to 2 spines = 4 links total.
-#
-# Usage:
-#   bash scripts/chaos/rack-partition.sh <rack-N>             # partition rack
-#   bash scripts/chaos/rack-partition.sh <rack-N> --restore   # restore rack
-#
-# Examples:
-#   bash scripts/chaos/rack-partition.sh rack-1
-#   bash scripts/chaos/rack-partition.sh rack-3 --restore
+# Chaos: partition a rack by downing all 4 spine-to-leaf links.
+# Each rack has 2 leafs x 2 spines = 4 links.
 
 set -euo pipefail
 
@@ -86,7 +77,7 @@ if [[ "$RESTORE" == true ]]; then
         "chaos,rack-partition-restore,${RACK}"
 else
     # --- Inject ---
-    log_chaos "ACTION: Partitioning ${RACK} — bringing down all 4 spine-leaf links"
+    log_chaos "ACTION: Partitioning ${RACK}: bringing down all 4 spine-leaf links"
     for i in "${!BRIDGES[@]}"; do
         sudo ip link set "${BRIDGES[$i]}" down
         log_chaos "  DOWN: ${LINK_DESC[$i]}"

@@ -1,14 +1,8 @@
 #!/usr/bin/env bash
-# ==========================================================================
-# configure-vm-fabric.sh — Configure fabric interfaces inside a VM
-# ==========================================================================
-# Called by setup-server-links.sh via: vagrant ssh <vm> -c "sudo bash /tmp/configure-vm-fabric.sh <args>"
-#
+# configure-vm-fabric.sh: configure fabric interfaces inside a VM.
+# Run by setup-server-links.sh: vagrant ssh <vm> -c "sudo bash <this> <args>".
 # Args: mac_a ip_a gw_a mac_b ip_b gw_b prefix [--no-default-route] [loopback_ip]
-#
-# IP persistence: writes NM keyfiles for each fabric interface and an
-# ECMP dispatcher script so routes survive reboots.
-# ==========================================================================
+# Writes NM keyfiles per interface + an ECMP dispatcher so routes survive reboots.
 set -euo pipefail
 
 mac_a="$1"
@@ -82,14 +76,8 @@ if [ -n "$loopback" ]; then
     echo "  lo = ${loopback}/32"
 fi
 
-# ==========================================================================
-# IP Persistence — NM keyfiles + ECMP dispatcher
-# ==========================================================================
-# NM keyfiles persist the IP assignments across reboots.
-# ECMP routes are applied by a dispatcher script because NM does not
-# natively support multi-nexthop ECMP routes.
-# ==========================================================================
-
+# IP persistence: NM keyfiles persist IP assignments across reboots; ECMP routes
+# need a dispatcher script because NM has no native multi-nexthop ECMP support.
 mkdir -p /etc/NetworkManager/system-connections
 
 # --- NM profile for fabric interface A ---
@@ -148,17 +136,14 @@ LOEOF
     chmod 600 /etc/NetworkManager/system-connections/fabric-lo.nmconnection
 fi
 
-# --- ECMP dispatcher script ---
-# NetworkManager dispatcher runs scripts in /etc/NetworkManager/dispatcher.d/
-# when interface state changes. We use this to re-apply ECMP routes after
-# both fabric interfaces are up. The script is idempotent.
-#
-# Uses MAC-based interface lookup so routes survive interface renumbering
-# across reboots (kernel may assign different ens* names after hot-plug).
+# ECMP dispatcher: NM runs dispatcher.d scripts on interface state change;
+# re-applies ECMP routes once both fabric interfaces are up (idempotent).
+# MAC-based lookup so routes survive interface renumbering across reboots
+# (kernel may assign different ens* names after hot-plug).
 mkdir -p /etc/NetworkManager/dispatcher.d
 cat > /etc/NetworkManager/dispatcher.d/99-netwatch-ecmp <<'DISPEOF'
 #!/usr/bin/env bash
-# NetWatch ECMP route dispatcher — re-apply multi-nexthop routes on interface up
+# NetWatch ECMP route dispatcher: re-apply multi-nexthop routes on interface up
 # Called by NetworkManager: $1=interface $2=action
 [ "$2" = "up" ] || exit 0
 
@@ -189,7 +174,7 @@ find_if_by_mac() {
 
 DISPEOF
 
-# Append MAC constants and route logic (not quoted — we want variable expansion)
+# Append MAC constants and route logic (unquoted heredoc: expand variables).
 cat >> /etc/NetworkManager/dispatcher.d/99-netwatch-ecmp <<DISPEOF
 
 # MACs for fabric interfaces (stable across reboots)

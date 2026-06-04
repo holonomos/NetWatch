@@ -1,16 +1,16 @@
 #!/bin/bash
-# NetWatch — Bridge Setup
-# Generated from topology.yml — DO NOT HAND-EDIT
+# NetWatch: Bridge Setup
+# Generated from topology.yml: DO NOT HAND-EDIT
 # 54 P2P fabric bridges + 1 management bridge.
 # STP disabled on all fabric bridges (L3 routing, not L2 switching).
-# Uses sudo internally for ip link commands. Run as your user.
+# Run as non-root; uses sudo internally for ip link commands.
 
 set -euo pipefail
 
 echo "NetWatch: Creating fabric bridges..."
 
 # --- Management bridge ---
-# Managed by libvirt (virbr2) — do NOT create or delete it here.
+# Managed by libvirt (virbr2); do NOT create or delete it here.
 echo "  [mgmt] virbr2 (libvirt-managed, skipping creation)"
 
 # --- Fabric bridges (STP disabled, no IP) ---

@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""
-NetWatch Config Generator
-=========================
-Reads topology.yml (single source of truth) and produces all configuration
-files for the fabric: FRR configs, udev rules, Prometheus scrape targets,
-dnsmasq DHCP/DNS, Loki config, and wiring/teardown/status scripts.
+"""NetWatch config generator.
+
+Renders all fabric config from topology.yml (single source of truth): FRR configs,
+udev rules, Prometheus scrape targets, dnsmasq DHCP/DNS, Loki, wiring/teardown/status
+scripts.
 
 Usage:
     python3 generator/generate.py [--topology topology.yml] [--outdir generated]
@@ -338,13 +337,9 @@ def build_frr_context(node: dict, topo: dict, all_nodes: dict = None) -> dict:
 def build_prometheus_context(nodes: dict, topo: dict) -> dict:
     """Build context for prometheus.yml template.
 
-    The node registry is authoritative for scrape targets (it carries the real
-    mgmt_ip / metrics_port for every node, including obs). The optional
-    observability.targets block in topology.yml is treated as a declared
-    expectation and CROSS-CHECKED here: any node that the topology lists for
-    scraping but that is missing from the registry-derived target set (or vice
-    versa) prints a warning. The registry is authoritative; the declared block
-    is cross-checked for drift.
+    Node registry is authoritative for scrape targets (real mgmt_ip / metrics_port
+    per node, including obs). The optional observability.targets block is cross-checked
+    against it: a node in one but not the other prints a drift warning.
     """
     obs = topo["observability"]["prometheus"]
 
@@ -378,8 +373,6 @@ def build_prometheus_context(nodes: dict, topo: dict) -> dict:
     if declared_names:
         rendered_names = {t["name"] for t in frr_targets} | \
                          {t["name"] for t in vm_targets}
-        # Exclude the prometheus host itself: it scrapes its own node_exporter
-        # via the registry, but need not be self-listed in the declared block.
         missing_from_declared = rendered_names - declared_names
         missing_from_registry = declared_names - rendered_names
         for nm in sorted(missing_from_registry):
@@ -450,8 +443,8 @@ def _server_index_map(nodes: dict) -> dict:
 def build_overlay_context(nodes: dict, topo: dict) -> dict:
     """Derive EVPN overlay wiring lists from evpn.tenants[].members.
 
-    Returns three lists (empty when evpn.tenants is absent → byte-identical
-    output to the pre-EVPN generator):
+    Returns three lists (empty when evpn.tenants is absent, so no overlay
+    wiring is emitted):
       overlay_bridges      : unique host bridge names (br-ovl-<idx>[-b])
       leaf_overlay_nics     : [{leaf, bridge, mac, name}]  (leaf access NIC, NO IP)
       server_overlay_nics   : [{server, bridge, mac, ip, name}]
@@ -623,8 +616,8 @@ def generate_udev_rules(node: dict, overlay_nics: list = None) -> str:
     registry and so are not present in node["interfaces"].
     """
     lines = [
-        f"# NetWatch — udev interface naming rules for {node['name']}",
-        "# Generated from topology.yml — DO NOT HAND-EDIT",
+        f"# NetWatch: udev interface naming rules for {node['name']}",
+        "# Generated from topology.yml: DO NOT HAND-EDIT",
         "# Maps deterministic MACs to FRR interface names.",
         "",
     ]
@@ -648,6 +641,155 @@ def generate_udev_rules(node: dict, overlay_nics: list = None) -> str:
             )
     lines.append("")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Chaos bridge-map emitter (single-source-of-truth for scripts/chaos/lib.sh)
+# ---------------------------------------------------------------------------
+
+def write_chaos_bridge_map(nodes: dict, all_links: list, topo: dict,
+                           out_dir: str) -> None:
+    """Emit generated/chaos/bridge-map.sh consumed by scripts/chaos/lib.sh.
+
+    Contains, all derived from the same registries the fabric scripts use:
+      BRIDGE_MAP   : "nodeA:nodeB" -> bridge (both directions), from all_links
+      FRR_NODES    : sorted frr-vm node names
+      RACK_LEAFS   : "rack-N" -> "leaf-Na leaf-Nb"
+      overlay aliases: leaf<->br-ovl-* and an overlay-suffixed leaf<->server key
+                       (the bare leaf:server key stays the /30 underlay link).
+
+    lib.sh sources this file AFTER its hardcoded fallbacks so generated values
+    win when present and the fallbacks stand when it is absent.
+    """
+    out = os.path.join(out_dir, "chaos")
+    os.makedirs(out, exist_ok=True)
+
+    frr_names = sorted(n for n, nd in nodes.items() if nd["type"] == "frr-vm")
+
+    # rack -> "leaf-Na leaf-Nb" (leaf nodes carry a rack tag)
+    rack_leafs = {}
+    for name, nd in sorted(nodes.items()):
+        if nd["role"] == "leaf" and nd.get("rack"):
+            rack_leafs.setdefault(nd["rack"], []).append(name)
+
+    overlay = build_overlay_context(nodes, topo)
+    # server_overlay_nics carries {server, bridge}; leaf_overlay_nics {leaf, bridge}.
+    bridge_to_server = {x["bridge"]: x["server"]
+                        for x in overlay["server_overlay_nics"]}
+
+    lines = []
+    lines.append("#!/usr/bin/env bash")
+    lines.append("# NetWatch chaos bridge map")
+    lines.append("# Generated from topology.yml: DO NOT HAND-EDIT")
+    lines.append("# Sourced by scripts/chaos/lib.sh (overrides its hardcoded fallback).")
+    lines.append("")
+    lines.append("declare -A BRIDGE_MAP=(")
+    for lk in all_links:
+        a, b, br = lk["a_name"], lk["b_name"], lk["bridge"]
+        lines.append('    [%s:%s]=%s    [%s:%s]=%s' % (a, b, br, b, a, br))
+    lines.append("")
+    lines.append("    # EVPN overlay access links (leaf <-> host bridge). The bare")
+    lines.append("    # leaf:server key above stays the /30 underlay link; overlay is")
+    lines.append("    # reachable via the bridge key and an -ovl suffixed leaf:server key.")
+    for x in overlay["leaf_overlay_nics"]:
+        leaf, br = x["leaf"], x["bridge"]
+        lines.append('    [%s:%s]=%s    [%s:%s]=%s' % (leaf, br, br, br, leaf, br))
+        srv = bridge_to_server.get(br)
+        if srv:
+            lines.append('    [%s:%s-ovl]=%s    [%s-ovl:%s]=%s'
+                         % (leaf, srv, br, srv, leaf, br))
+    lines.append(")")
+    lines.append("")
+    lines.append("FRR_NODES=(")
+    lines.append("    " + " ".join(frr_names))
+    lines.append(")")
+    lines.append("")
+    lines.append("declare -A RACK_LEAFS=(")
+    for rack in sorted(rack_leafs):
+        lines.append('    [%s]="%s"' % (rack, " ".join(sorted(rack_leafs[rack]))))
+    lines.append(")")
+    lines.append("")
+
+    path = os.path.join(out, "bridge-map.sh")
+    with open(path, "w") as fh:
+        fh.write("\n".join(lines))
+    print(f"  [Scripts]    chaos bridge-map -> {out_dir}/chaos/")
+
+
+# ---------------------------------------------------------------------------
+# EVPN params emitter (single-source-of-truth for scripts/fabric/setup-evpn.sh)
+# ---------------------------------------------------------------------------
+
+def write_evpn_params(nodes: dict, topo: dict, out_dir: str) -> None:
+    """Emit generated/evpn/evpn-params.sh consumed by scripts/fabric/setup-evpn.sh.
+
+    Derives the leaf->loopback map, the tenantspec strings, the per-server
+    overlay member "nic,gw" pairs, and the EVPN scalars straight from evpn.*
+    + leaf loopbacks. setup-evpn.sh sources it AFTER its literal definitions so
+    the generated values win when present and the literals stand when absent.
+    Empty (header-only data) when evpn.tenants is absent.
+    """
+    ev = topo.get("evpn", {})
+    out = os.path.join(out_dir, "evpn")
+    os.makedirs(out, exist_ok=True)
+
+    l3vni = ev.get("l3vni", 10999)
+    vrf = ev.get("l3vni_vrf", "Tenant-A")
+    l3vlan = ev.get("l3vni_vlan", 999)
+    anycast_mac = ev.get("anycast_gw_mac", "00:00:5e:00:01:99")
+    tenants = ev.get("tenants", [])
+
+    # Primary L2VNI = the first tenant's l2vni (matches setup-evpn.sh VNI=).
+    primary_vni = tenants[0]["l2vni"] if tenants else ""
+
+    # leaf -> loopback (strip /32)
+    leafs = {}
+    for name, nd in sorted(nodes.items()):
+        if nd["role"] == "leaf" and nd.get("loopback"):
+            leafs[name] = nd["loopback"].split("/")[0]
+
+    # tenantspec list: "l2vni:vlan:gwcidr:sviname"
+    tenant_specs = []
+    for t in tenants:
+        tenant_specs.append("%s:%s:%s:%s" % (
+            t["l2vni"], t["access_vlan"], t["anycast_gw"], t["svi"]))
+
+    # OVERLAY_MEMBERS: server -> space-separated "nic,gw" (gw = bare .1 host)
+    members = {}
+    for t in tenants:
+        gw_host = t["anycast_gw"].split("/")[0]
+        for m in t.get("members", []):
+            members.setdefault(m["server"], []).append(
+                "%s,%s" % (m.get("nic", "tnt0"), gw_host))
+
+    lines = []
+    lines.append("#!/usr/bin/env bash")
+    lines.append("# NetWatch EVPN params")
+    lines.append("# Generated from topology.yml: DO NOT HAND-EDIT")
+    lines.append("# Sourced by scripts/fabric/setup-evpn.sh (overrides its literals).")
+    lines.append("")
+    lines.append('VNI=%s' % primary_vni)
+    lines.append('L3VNI=%s' % l3vni)
+    lines.append('VRF=%s' % vrf)
+    lines.append('L3VLAN=%s' % l3vlan)
+    lines.append('ANYCAST_MAC=%s' % anycast_mac)
+    lines.append('TENANTS="%s"' % " ".join(tenant_specs))
+    lines.append("")
+    lines.append("declare -A LEAFS=(")
+    for leaf in sorted(leafs):
+        lines.append('    [%s]=%s' % (leaf, leafs[leaf]))
+    lines.append(")")
+    lines.append("")
+    lines.append("declare -A OVERLAY_MEMBERS=(")
+    for srv in sorted(members):
+        lines.append('    [%s]="%s"' % (srv, " ".join(members[srv])))
+    lines.append(")")
+    lines.append("")
+
+    path = os.path.join(out, "evpn-params.sh")
+    with open(path, "w") as fh:
+        fh.write("\n".join(lines))
+    print(f"  [Scripts]    evpn params      -> {out_dir}/evpn/")
 
 
 # ---------------------------------------------------------------------------
@@ -703,6 +845,12 @@ def render_templates(topo: dict, nodes: dict, all_links: list,
         f.write(prom_tmpl.render(prom_ctx))
     print(f"  [Prometheus] scrape config   -> {out_dir}/prometheus/")
 
+    # Alert rules (referenced by prometheus.yml rule_files; copied by provision-obs.sh).
+    alerts_tmpl = env.get_template("prometheus/alerts.yml.j2")
+    with open(os.path.join(prom_dir, "alerts.yml"), "w") as f:
+        f.write(alerts_tmpl.render(prom_ctx))
+    print(f"  [Prometheus] alert rules     -> {out_dir}/prometheus/")
+
     # --- dnsmasq ---
     dns_tmpl = env.get_template("dnsmasq/dnsmasq.conf.j2")
     dns_ctx = build_dnsmasq_context(nodes, topo)
@@ -728,6 +876,12 @@ def render_templates(topo: dict, nodes: dict, all_links: list,
     grafana_src = os.path.join(template_dir, "grafana", "dashboards")
     grafana_dst = os.path.join(out_dir, "grafana", "dashboards")
     os.makedirs(grafana_dst, exist_ok=True)
+    # Templates are authoritative: clear any stale *.json in the dest first so a
+    # dashboard deleted from templates/ does not linger as a generated file (and
+    # keep loading on the obs VM). Only *.json files are removed; nothing else.
+    for fn in os.listdir(grafana_dst):
+        if fn.endswith(".json"):
+            os.remove(os.path.join(grafana_dst, fn))
     dash_count = 0
     if os.path.isdir(grafana_src):
         for fn in sorted(os.listdir(grafana_src)):
@@ -736,6 +890,24 @@ def render_templates(topo: dict, nodes: dict, all_links: list,
                                 os.path.join(grafana_dst, fn))
                 dash_count += 1
     print(f"  [Grafana]    {dash_count} dashboards    -> {out_dir}/grafana/dashboards/")
+
+    # Cross-check the declared observability.grafana.dashboards list against the
+    # *.json files actually copied (registry/disk authoritative; declared list
+    # cross-checked for drift, mirroring the prometheus targets drift check).
+    declared_dash = set(
+        topo.get("observability", {}).get("grafana", {}).get("dashboards", []) or [])
+    if declared_dash:
+        disk_dash = set()
+        if os.path.isdir(grafana_src):
+            disk_dash = {fn[:-5] for fn in os.listdir(grafana_src)
+                         if fn.endswith(".json")}
+        for nm in sorted(declared_dash - disk_dash):
+            print(f"  WARNING: grafana dashboard '{nm}' is declared in topology.yml "
+                  f"but has no .json on disk (drift)", file=sys.stderr)
+        for nm in sorted(disk_dash - declared_dash):
+            print(f"  WARNING: grafana dashboard '{nm}.json' exists on disk but is "
+                  f"absent from observability.grafana.dashboards (drift)",
+                  file=sys.stderr)
 
     # --- Bridge setup script ---
     bridge_tmpl = env.get_template("scripts/setup-bridges.sh.j2")
@@ -774,6 +946,10 @@ def render_templates(topo: dict, nodes: dict, all_links: list,
         f.write(server_links_tmpl.render(bridge_ctx))
     os.chmod(os.path.join(scripts_dir, "setup-server-links.sh"), 0o755)
     print(f"  [Scripts]    server-links    -> scripts/fabric/")
+
+    # --- Chaos bridge map + EVPN params (generated data for hand-maintained scripts) ---
+    write_chaos_bridge_map(nodes, all_links, topo, out_dir)
+    write_evpn_params(nodes, topo, out_dir)
 
 
 # ---------------------------------------------------------------------------

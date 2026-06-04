@@ -1,13 +1,7 @@
 #!/usr/bin/env bash
-# ==========================================================================
-# monitor.sh — HTTP availability monitor
-# ==========================================================================
-# Continuously curls a service IP and logs results.
-# Run during chaos testing to measure fabric availability.
-#
+# monitor.sh: HTTP availability monitor. Polls a service IP, logs status/latency,
+# tracks max outage gap. Run during chaos testing to measure fabric availability.
 # Usage: bash validation/monitor.sh <service-ip> [interval-seconds]
-# Output: timestamp, HTTP status, latency (ms)
-# ==========================================================================
 set -uo pipefail
 
 SERVICE_IP="${1:-}"

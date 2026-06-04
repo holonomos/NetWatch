@@ -1,9 +1,9 @@
-# NetWatch — dnsmasq configuration
-# Generated from topology.yml — DO NOT HAND-EDIT
+# NetWatch: dnsmasq configuration
+# Generated from topology.yml: DO NOT HAND-EDIT
 #
 # Authoritative DNS server for the OOB management network.
-# Resolves hostname.netwatch.lab → management IP for all 30 nodes.
-# DHCP is handled by libvirt on the host — dnsmasq is DNS-only.
+# Resolves hostname.netwatch.lab -> management IP for all 31 nodes.
+# DHCP is handled by libvirt on the host; dnsmasq is DNS-only.
 
 # --- General ---
 domain={{ domain }}
@@ -19,7 +19,7 @@ server=8.8.8.8
 # --- DNS only (DHCP handled by libvirt on the host) ---
 port=53
 
-# --- DNS entries (hostname → management IP) ---
+# --- DNS entries (hostname -> management IP) ---
 {% for res in reservations %}
 address=/{{ res.name }}.{{ domain }}/{{ res.ip }}
 {% endfor %}

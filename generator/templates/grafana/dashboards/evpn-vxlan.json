@@ -25,91 +25,8 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Remote MACs (over-VXLAN)",
-      "description": "Sum of Type-2 (remote) MACs across all L2 VNIs; >0 confirms remote peers' MACs are learned via VXLAN.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "netwatch-prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 0
-      },
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "red",
-                  "index": 0,
-                  "text": "0 — no remote MACs"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          },
-          "color": {
-            "mode": "thresholds"
-          },
-          "unit": "short",
-          "min": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "text": {
-          "titleSize": 16,
-          "valueSize": 56
-        },
-        "textMode": "value_and_name"
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "netwatch-prometheus"
-          },
-          "expr": "sum(netwatch_evpn_mac_remote_total) OR on() vector(0)",
-          "instant": false,
-          "legendFormat": "remote MACs",
-          "range": true,
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 2,
-      "type": "stat",
       "title": "VNIs",
-      "description": "Number of active VNIs on the fabric (max across VTEPs).",
+      "description": "Active VNIs on the fabric (max across VTEPs).",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -117,7 +34,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 8,
+        "x": 0,
         "y": 0
       },
       "fieldConfig": {
@@ -174,10 +91,10 @@
       ]
     },
     {
-      "id": 3,
+      "id": 2,
       "type": "stat",
       "title": "L2 VNIs",
-      "description": "Number of L2 VNIs (max across VTEPs).",
+      "description": "L2 VNIs (max across VTEPs).",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -185,7 +102,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 12,
+        "x": 4,
         "y": 0
       },
       "fieldConfig": {
@@ -242,10 +159,10 @@
       ]
     },
     {
-      "id": 4,
+      "id": 3,
       "type": "stat",
       "title": "L3 VNIs",
-      "description": "Number of L3 VNIs (max across VTEPs).",
+      "description": "L3 VNIs (max across VTEPs).",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -253,7 +170,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 16,
+        "x": 8,
         "y": 0
       },
       "fieldConfig": {
@@ -310,7 +227,7 @@
       ]
     },
     {
-      "id": 5,
+      "id": 4,
       "type": "stat",
       "title": "EVPN peers Established",
       "description": "L2VPN EVPN BGP peers in Established state (max across VTEPs).",
@@ -321,7 +238,7 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 20,
+        "x": 12,
         "y": 0
       },
       "fieldConfig": {
@@ -378,7 +295,7 @@
       ]
     },
     {
-      "id": 6,
+      "id": 5,
       "type": "stat",
       "title": "Remote VTEPs",
       "description": "Remote VTEPs discovered via EVPN (max across VTEPs).",
@@ -388,9 +305,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 8,
-        "x": 8,
-        "y": 4
+        "w": 4,
+        "x": 16,
+        "y": 0
       },
       "fieldConfig": {
         "defaults": {
@@ -428,7 +345,7 @@
           "fields": "",
           "values": false
         },
-        "textMode": "value_and_name"
+        "textMode": "value"
       },
       "pluginVersion": "10.0.0",
       "targets": [
@@ -437,7 +354,7 @@
             "type": "prometheus",
             "uid": "netwatch-prometheus"
           },
-          "expr": "max(netwatch_evpn_remote_vteps) OR on() vector(0)",
+          "expr": "max(netwatch_evpn_vni_remote_vteps) OR on() vector(0)",
           "instant": false,
           "legendFormat": "Remote VTEPs",
           "range": true,
@@ -446,19 +363,19 @@
       ]
     },
     {
-      "id": 7,
+      "id": 6,
       "type": "stat",
-      "title": "EVPN routes (max per VTEP)",
-      "description": "Total EVPN routes (Type-2 + Type-3 + Type-5), max across VTEPs.",
+      "title": "Remote MACs",
+      "description": "Remote MACs learned over VXLAN, summed across all L2 VNIs.",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
       },
       "gridPos": {
         "h": 4,
-        "w": 8,
-        "x": 16,
-        "y": 4
+        "w": 4,
+        "x": 20,
+        "y": 0
       },
       "fieldConfig": {
         "defaults": {
@@ -496,7 +413,7 @@
           "fields": "",
           "values": false
         },
-        "textMode": "value_and_name"
+        "textMode": "value"
       },
       "pluginVersion": "10.0.0",
       "targets": [
@@ -505,19 +422,19 @@
             "type": "prometheus",
             "uid": "netwatch-prometheus"
           },
-          "expr": "max(netwatch_evpn_routes_total) OR on() vector(0)",
+          "expr": "sum(netwatch_evpn_mac_remote_total) OR on() vector(0)",
           "instant": false,
-          "legendFormat": "EVPN routes",
+          "legendFormat": "Remote MACs",
           "range": true,
           "refId": "A"
         }
       ]
     },
     {
-      "id": 8,
+      "id": 7,
       "type": "table",
       "title": "VNI inventory",
-      "description": "All VNIs present on the fabric, with their type (L2/L3) and associated VRF, from netwatch_evpn_vni_info.",
+      "description": "VNIs present on the fabric with type (L2/L3) and associated VRF, from netwatch_evpn_vni_info.",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -526,7 +443,7 @@
         "h": 9,
         "w": 8,
         "x": 0,
-        "y": 8
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -550,7 +467,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "type"
+              "options": "Type"
             },
             "properties": [
               {
@@ -584,7 +501,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "vni"
+              "options": "VNI"
             },
             "properties": [
               {
@@ -646,10 +563,10 @@
       ]
     },
     {
-      "id": 9,
+      "id": 8,
       "type": "timeseries",
-      "title": "Per-VNI MAC counts (total / local / remote)",
-      "description": "MACs learned per L2 VNI; remote entries (over-VXLAN, Type-2) are highlighted with thicker lines.",
+      "title": "MACs per VNI (total / local / remote)",
+      "description": "MACs learned per L2 VNI. Remote entries are learned over VXLAN and are drawn with thicker lines.",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -658,7 +575,7 @@
         "h": 9,
         "w": 16,
         "x": 8,
-        "y": 8
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -702,13 +619,6 @@
               {
                 "id": "custom.fillOpacity",
                 "value": 25
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
               }
             ]
           }
@@ -763,10 +673,10 @@
       ]
     },
     {
-      "id": 10,
+      "id": 9,
       "type": "timeseries",
-      "title": "Per-VNI ARP/ND entries (total / remote)",
-      "description": "ARP/ND (neighbor) entries learned per L2 VNI. Remote entries are learned over the VXLAN overlay.",
+      "title": "ARP/ND per VNI (total / remote)",
+      "description": "ARP/ND neighbor entries per L2 VNI. Remote entries are learned over VXLAN.",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -775,7 +685,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 17
+        "y": 13
       },
       "fieldConfig": {
         "defaults": {
@@ -863,10 +773,10 @@
       ]
     },
     {
-      "id": 11,
+      "id": 10,
       "type": "timeseries",
       "title": "EVPN routes per leaf",
-      "description": "Total EVPN routes (Type-2 + Type-3 + Type-5) advertised/received per leaf VTEP instance.",
+      "description": "EVPN routes (Type-2 + Type-3 + Type-5) per leaf VTEP instance.",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -875,7 +785,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 17
+        "y": 13
       },
       "fieldConfig": {
         "defaults": {
@@ -952,7 +862,7 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "NetWatch — EVPN / VXLAN",
+  "title": "NetWatch - EVPN / VXLAN",
   "uid": "netwatch-evpn-vxlan",
   "version": 1,
   "weekStart": ""

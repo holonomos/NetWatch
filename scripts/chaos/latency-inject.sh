@@ -1,17 +1,6 @@
 #!/usr/bin/env bash
-# NetWatch — Chaos: Latency Injection
-# Adds artificial latency (and optional jitter) to a fabric link using tc netem.
-#
-# Usage:
-#   bash scripts/chaos/latency-inject.sh <node-a> <node-b> --delay 100ms [--jitter 20ms]
-#   bash scripts/chaos/latency-inject.sh <node-a> <node-b> --restore
-#
-# Applies netem to ALL host-side veths on the bridge (both directions).
-#
-# Examples:
-#   bash scripts/chaos/latency-inject.sh spine-1 leaf-1a --delay 100ms
-#   bash scripts/chaos/latency-inject.sh spine-1 leaf-1a --delay 200ms --jitter 50ms
-#   bash scripts/chaos/latency-inject.sh spine-1 leaf-1a --restore
+# Chaos: inject latency/jitter on a fabric link via tc netem.
+# Applies to all host-side veths on the bridge (both directions). See --help.
 
 set -euo pipefail
 

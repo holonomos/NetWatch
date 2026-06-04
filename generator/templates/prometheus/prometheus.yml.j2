@@ -1,9 +1,10 @@
-# NetWatch — Prometheus configuration
-# Generated from topology.yml — DO NOT HAND-EDIT
+# NetWatch: Prometheus configuration
+# Generated from topology.yml: DO NOT HAND-EDIT
 #
-# Scrape targets:
+# Scrape targets (derived from the topology.yml node registry):
 #   - 12 FRR VMs on port 9342 (frr_exporter)
-#   - 30 VMs on port 9100 (node_exporter)
+#   - 19 VMs on port 9100 (node_exporter): 16 servers + bastion + obs + mgmt
+#   - 8 leaves on port 9100 (node_exporter) for the EVPN textfile metrics (netwatch_evpn_*)
 
 global:
   scrape_interval: {{ scrape_interval }}s
@@ -32,6 +33,21 @@ scrape_configs:
     static_configs:
 {% for target in vm_targets %}
       - targets: ['{{ target.ip }}:{{ target.port }}']
+        labels:
+          instance: '{{ target.name }}'
+          role: '{{ target.role }}'
+{% if target.rack %}
+          rack: '{{ target.rack }}'
+{% endif %}
+{% endfor %}
+
+  # --- Leaf VTEP node_exporter (:9100): EVPN textfile metrics (netwatch_evpn_*) ---
+  # Leaves also run frr_exporter (:9342, scraped above); :9100 carries the
+  # per-VNI EVPN series for the evpn-vxlan dashboard.
+  - job_name: 'leaf-evpn'
+    static_configs:
+{% for target in frr_targets if target.role == 'leaf' %}
+      - targets: ['{{ target.ip }}:9100']
         labels:
           instance: '{{ target.name }}'
           role: '{{ target.role }}'

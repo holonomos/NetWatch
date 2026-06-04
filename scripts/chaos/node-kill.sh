@@ -1,18 +1,6 @@
 #!/usr/bin/env bash
-# NetWatch — Chaos: Node Kill / Restore
-# Destroys or starts an FRR VM to simulate a complete node failure.
-#
-# Usage:
-#   bash scripts/chaos/node-kill.sh <node-name>             # kill (virsh destroy)
-#   bash scripts/chaos/node-kill.sh <node-name> --restore   # restore (virsh start + reconfigure)
-#
-# Only supports FRR VMs (12 fabric nodes).
-# Does NOT support server VMs — use 'vagrant halt/up' for those.
-#
-# Examples:
-#   bash scripts/chaos/node-kill.sh spine-1
-#   bash scripts/chaos/node-kill.sh spine-1 --restore
-#   bash scripts/chaos/node-kill.sh leaf-2a
+# Chaos: kill (virsh destroy) or --restore (virsh start) an FRR VM to simulate node failure.
+# FRR VMs only (12 fabric nodes); for server VMs use 'vagrant halt/up'. See --help.
 
 set -euo pipefail
 
@@ -79,7 +67,7 @@ fi
 if [[ "$RESTORE" == true ]]; then
     # --- Restore ---
     if [[ "$VM_STATE" == "running" ]]; then
-        log_chaos "VM '${NODE}' is already running — nothing to do"
+        log_chaos "VM '${NODE}' is already running; nothing to do"
         exit 0
     fi
 
@@ -116,7 +104,7 @@ if [[ "$RESTORE" == true ]]; then
 else
     # --- Kill ---
     if [[ "$VM_STATE" != "running" ]]; then
-        log_chaos "VM '${NODE}' is already stopped (state: ${VM_STATE}) — nothing to do"
+        log_chaos "VM '${NODE}' is already stopped (state: ${VM_STATE}); nothing to do"
         exit 0
     fi
 

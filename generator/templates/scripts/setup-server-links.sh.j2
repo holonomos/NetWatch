@@ -1,20 +1,10 @@
 #!/bin/bash
-# NetWatch — Server & Bastion Fabric Wiring
-# Generated from topology.yml — DO NOT HAND-EDIT
+# NetWatch: Server & Bastion Fabric Wiring
+# Generated from topology.yml: DO NOT HAND-EDIT
 #
-# Hot-plugs fabric NICs into server and bastion VMs (via virsh),
-# then configures IPs, ECMP routes, and NAT rules.
-#
-# - Servers: 2 NICs (leaf-a + leaf-b), ECMP default via both leafs
-# - Bastion: 2 NICs (border-1 + border-2), ECMP fabric routes, NAT masquerade
-#
-# Prerequisites: VMs running (vagrant up), fabric bridges exist (setup-bridges.sh).
-# Run as your user (NOT sudo): bash scripts/fabric/setup-server-links.sh
-# (uses sudo internally for virsh commands only)
+# Hot-plugs fabric NICs into server/bastion VMs, then configures IPs, ECMP
+# routes, and NAT. Run as your user (uses sudo internally for virsh/bridges).
 
-# -e: a failed virsh attach-interface / vagrant ssh aborts instead of printing
-#     a false success line. Commands that may legitimately fail are guarded
-#     with `|| true` or used as `if`/`&&` tests.
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -22,8 +12,7 @@ VIRSH_PREFIX="$(basename "$PROJECT_ROOT")"
 
 echo "NetWatch: Wiring server and bastion VMs to fabric bridges..."
 
-# Helper: bounded wait for a freshly attached NIC's MAC to appear in the
-# domain's interface list; returns 0 when found.
+# Bounded wait for an attached NIC's MAC to appear in the domain's iface list.
 wait_for_mac() {
     local domain="$1"
     local mac="$2"
@@ -40,8 +29,8 @@ wait_for_mac() {
     return 0
 }
 
-# Helper: attach a NIC to a VM on a given bridge (idempotent)
-# Also ensures the tap device is actually a member of the bridge.
+# Attach a NIC to a VM on a bridge (idempotent), then ensure its tap device
+# is actually enslaved to that bridge.
 attach_nic() {
     local vm="$1"
     local bridge="$2"
@@ -62,7 +51,7 @@ attach_nic() {
         wait_for_mac "$domain" "$mac"
     fi
 
-    # Ensure the tap device is actually on the bridge (libvirt sometimes misses this)
+    # libvirt sometimes does not enslave the tap; force it.
     local vnet
     vnet=$(virsh -c qemu:///system domiflist "$domain" 2>/dev/null </dev/null | grep -i "$mac" | head -1 | awk '{print $1}')
     if [ -n "$vnet" ]; then
@@ -76,8 +65,7 @@ attach_nic() {
     fi
 }
 
-# Helper: configure fabric interfaces inside a VM
-# Uses configure-vm-fabric.sh piped through vagrant ssh (avoids heredoc issues)
+# configure-vm-fabric.sh piped through vagrant ssh (avoids heredoc issues).
 FABRIC_SCRIPT="$PROJECT_ROOT/scripts/fabric/configure-vm-fabric.sh"
 
 configure_server() {
@@ -86,9 +74,13 @@ configure_server() {
     shift 2
     # remaining args: mac_a ip_a gw_a mac_b ip_b gw_b prefix [--no-default-route] [loopback]
     cd "$PROJECT_ROOT"
-    # Run in a subshell to isolate stdin from the parent script
+    # subshell isolates stdin from the parent script
     ( vagrant ssh "$vm" -c "sudo bash -s -- $*" < "$FABRIC_SCRIPT" )
 }
+
+# Accumulate per-node failures without aborting, so one flaky server does not
+# block the bastion from being wired. Overall failure surfaced via exit code.
+WIRE_RC=0
 
 # --- Wire each server ---
 {% for server in server_nodes %}
@@ -96,12 +88,12 @@ configure_server() {
 {% set if_b = server.interfaces[1] %}
 echo ""
 echo "{{ server.name }}: {{ if_a.bridge }} ({{ if_a.peer }}) + {{ if_b.bridge }} ({{ if_b.peer }})"
-attach_nic "{{ server.name }}" "{{ if_a.bridge }}" "{{ server.leaf_a_mac }}"
-attach_nic "{{ server.name }}" "{{ if_b.bridge }}" "{{ server.leaf_b_mac }}"
+attach_nic "{{ server.name }}" "{{ if_a.bridge }}" "{{ server.leaf_a_mac }}" || WIRE_RC=1
+attach_nic "{{ server.name }}" "{{ if_b.bridge }}" "{{ server.leaf_b_mac }}" || WIRE_RC=1
 configure_server "{{ server.name }}" "{{ server.mgmt_ip }}" \
     "{{ server.leaf_a_mac }}" "{{ if_a.ip }}" "{{ if_a.peer_ip }}" \
     "{{ server.leaf_b_mac }}" "{{ if_b.ip }}" "{{ if_b.peer_ip }}" \
-    "{{ if_a.prefix_len }}" "{{ server.loopback.split('/')[0] if server.loopback else '' }}"
+    "{{ if_a.prefix_len }}" "{{ server.loopback.split('/')[0] if server.loopback else '' }}" || WIRE_RC=1
 {% endfor %}
 
 echo ""
@@ -110,31 +102,26 @@ echo "  - 2 NICs per server (leaf-a + leaf-b)"
 echo "  - ECMP default routes via fabric (north-south path active)"
 {% if server_overlay_nics %}
 
-# ========================================================================
-# EVPN overlay access NICs on member servers (tnt0 / tnt1)
-# ========================================================================
-# An ADDITIONAL NIC per participating server, attached to its per-tenant host
-# bridge (br-ovl-*). configure-overlay-if.sh gives it ONLY the tenant /24 via
-# NM method=manual — NO gateway, NO routes — so it can never perturb the /30
-# ECMP underlay above. This does NOT touch the server's 2 fabric NICs.
+# EVPN overlay access NICs on member servers (tnt0 / tnt1).
+# One extra NIC per participating server on its per-tenant bridge (br-ovl-*).
+# configure-overlay-if.sh gives it only the tenant /24 (no gateway, no routes)
+# so it cannot perturb the /30 ECMP underlay. Does not touch the fabric NICs.
 OVERLAY_IF_SCRIPT="$PROJECT_ROOT/scripts/fabric/configure-overlay-if.sh"
 echo ""
 echo "Attaching {{ server_overlay_nics|length }} EVPN overlay access NIC(s) to member servers..."
 {% for so in server_overlay_nics %}
 echo "  {{ so.server }}: {{ so.name }} on {{ so.bridge }} ({{ so.mac }}) -> {{ so.ip }}"
 attach_nic "{{ so.server }}" "{{ so.bridge }}" "{{ so.mac }}"
-( vagrant ssh "{{ so.server }}" -c "sudo bash -s -- {{ so.mac }} {{ so.ip }} {{ so.name }}" < "$OVERLAY_IF_SCRIPT" )
+( vagrant ssh "{{ so.server }}" -c "sudo bash -s -- {{ so.mac }} {{ so.ip }} {{ so.name }}" < "$OVERLAY_IF_SCRIPT" ) || WIRE_RC=1
 {% endfor %}
 echo ""
 echo "NetWatch: {{ server_overlay_nics|length }} overlay access NIC(s) configured (tenant /24 only, no default/ECMP)."
 {% endif %}
 
 {% if bastion_node and bastion_node.interfaces|length >= 2 %}
-# ========================================================================
-# Bastion Fabric Wiring (north-south exit)
-# ========================================================================
-# Two NICs: one to each border router. ECMP routes for fabric prefixes.
-# NAT masquerade for fabric source IPs exiting to the internet.
+# Bastion fabric wiring (north-south exit).
+# Two NICs, one per border router; ECMP routes for fabric prefixes; NAT
+# masquerade for fabric source IPs exiting to the internet.
 echo ""
 echo "========================================"
 echo " Wiring bastion to fabric..."
@@ -143,19 +130,18 @@ echo "========================================"
 {% set bst_if_a = bastion_node.interfaces[0] %}
 {% set bst_if_b = bastion_node.interfaces[1] %}
 
-# Deterministic MACs for bastion fabric NICs
-# Format: 02:4E:57:05:01:01 (border-1), 02:4E:57:05:01:02 (border-2)
+# Deterministic MACs: 02:4E:57:05:01:01 (border-1), 02:4E:57:05:01:02 (border-2)
 BASTION_MAC_A="02:4E:57:05:01:01"
 BASTION_MAC_B="02:4E:57:05:01:02"
 
 echo "bastion: {{ bst_if_a.bridge }} ({{ bst_if_a.peer }}) + {{ bst_if_b.bridge }} ({{ bst_if_b.peer }})"
-attach_nic "bastion" "{{ bst_if_a.bridge }}" "$BASTION_MAC_A"
-attach_nic "bastion" "{{ bst_if_b.bridge }}" "$BASTION_MAC_B"
+attach_nic "bastion" "{{ bst_if_a.bridge }}" "$BASTION_MAC_A" || WIRE_RC=1
+attach_nic "bastion" "{{ bst_if_b.bridge }}" "$BASTION_MAC_B" || WIRE_RC=1
 
-# Configure bastion fabric interfaces + NAT (uses its own dedicated script)
+# Configure bastion fabric interfaces + NAT.
 BASTION_SCRIPT="$PROJECT_ROOT/scripts/fabric/configure-bastion-fabric.sh"
 cd "$PROJECT_ROOT"
-( vagrant ssh bastion -c "sudo bash -s -- 02:4E:57:05:01:01 {{ bst_if_a.ip }} {{ bst_if_a.peer_ip }} 02:4E:57:05:01:02 {{ bst_if_b.ip }} {{ bst_if_b.peer_ip }} {{ bst_if_a.prefix_len }}" < "$BASTION_SCRIPT" )
+( vagrant ssh bastion -c "sudo bash -s -- 02:4E:57:05:01:01 {{ bst_if_a.ip }} {{ bst_if_a.peer_ip }} 02:4E:57:05:01:02 {{ bst_if_b.ip }} {{ bst_if_b.peer_ip }} {{ bst_if_a.prefix_len }}" < "$BASTION_SCRIPT" ) || WIRE_RC=1
 
 echo ""
 echo "NetWatch: Bastion wired to fabric."
@@ -169,3 +155,10 @@ echo "Verify:"
 echo "  vagrant ssh srv-1-1 -c 'ip route show default'"
 echo "  vagrant ssh bastion -c 'ip route show 10.0.0.0/8'"
 echo "  vagrant ssh srv-1-1 -c 'traceroute -n 8.8.8.8'"
+
+if [ "$WIRE_RC" -ne 0 ]; then
+    echo "" >&2
+    echo "WARNING: one or more nodes failed to wire (see WARN/error lines above)." >&2
+    echo "The bastion was still configured; re-run 'make wire' to retry failed nodes." >&2
+fi
+exit $WIRE_RC

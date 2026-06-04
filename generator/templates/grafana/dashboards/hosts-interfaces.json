@@ -24,9 +24,22 @@
   "panels": [
     {
       "id": 1,
+      "type": "row",
+      "title": "Host health",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
       "type": "stat",
       "title": "CPU busy %",
-      "description": "Aggregate CPU utilisation across all cores for the selected node(s). 100% minus idle time.",
+      "description": "CPU utilisation across all cores for the selected node(s). 100 minus idle rate.",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -35,7 +48,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 0
+        "y": 1
       },
       "fieldConfig": {
         "defaults": {
@@ -95,10 +108,10 @@
       ]
     },
     {
-      "id": 2,
+      "id": 3,
       "type": "stat",
       "title": "Memory used %",
-      "description": "Percentage of total RAM in use (MemTotal minus MemAvailable).",
+      "description": "Percentage of RAM in use. 100*(1 - MemAvailable/MemTotal).",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -107,7 +120,7 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 0
+        "y": 1
       },
       "fieldConfig": {
         "defaults": {
@@ -167,7 +180,7 @@
       ]
     },
     {
-      "id": 3,
+      "id": 4,
       "type": "stat",
       "title": "Load1",
       "description": "1-minute load average for the selected node(s).",
@@ -179,7 +192,7 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 0
+        "y": 1
       },
       "fieldConfig": {
         "defaults": {
@@ -238,10 +251,10 @@
       ]
     },
     {
-      "id": 4,
+      "id": 5,
       "type": "stat",
       "title": "Max disk used %",
-      "description": "Highest filesystem utilisation across all mounts on the selected node(s).",
+      "description": "Highest filesystem utilisation across mounts on the selected node(s). 100*(1 - avail/size).",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -250,7 +263,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 0
+        "y": 1
       },
       "fieldConfig": {
         "defaults": {
@@ -310,7 +323,7 @@
       ]
     },
     {
-      "id": 5,
+      "id": 6,
       "type": "timeseries",
       "title": "CPU busy % over time",
       "description": "100*(1 - idle rate) per selected node.",
@@ -322,7 +335,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 6
+        "y": 7
       },
       "fieldConfig": {
         "defaults": {
@@ -393,10 +406,10 @@
       ]
     },
     {
-      "id": 6,
+      "id": 7,
       "type": "timeseries",
       "title": "CPU time by mode (rate, 1m)",
-      "description": "Per-mode CPU breakdown for the selected node(s): user, system, iowait, etc.",
+      "description": "Per-mode CPU breakdown for the selected node(s): user, system, iowait, and others.",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -405,7 +418,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 6
+        "y": 7
       },
       "fieldConfig": {
         "defaults": {
@@ -466,7 +479,7 @@
       ]
     },
     {
-      "id": 7,
+      "id": 8,
       "type": "timeseries",
       "title": "Memory used % over time",
       "description": "100*(1 - MemAvailable/MemTotal) per selected node.",
@@ -478,7 +491,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 14
+        "y": 15
       },
       "fieldConfig": {
         "defaults": {
@@ -549,7 +562,7 @@
       ]
     },
     {
-      "id": 8,
+      "id": 9,
       "type": "timeseries",
       "title": "Load average (1m)",
       "description": "node_load1 per selected node.",
@@ -561,7 +574,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 14
+        "y": 15
       },
       "fieldConfig": {
         "defaults": {
@@ -631,7 +644,7 @@
       ]
     },
     {
-      "id": 9,
+      "id": 10,
       "type": "timeseries",
       "title": "Disk used % per mount",
       "description": "100*(1 - avail/size) per filesystem mountpoint on the selected node(s).",
@@ -643,7 +656,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 23
       },
       "fieldConfig": {
         "defaults": {
@@ -713,10 +726,23 @@
       ]
     },
     {
-      "id": 10,
+      "id": 11,
+      "type": "row",
+      "title": "Interfaces",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "panels": []
+    },
+    {
+      "id": 12,
       "type": "timeseries",
-      "title": "Network throughput per device (rx/tx, bps)",
-      "description": "rate(node_network_receive_bytes_total[1m])*8 (positive) and transmit (negative) per interface on the selected node(s).",
+      "title": "Throughput per interface (rx/tx, bps)",
+      "description": "rate(node_network_receive_bytes_total[1m])*8 plotted up, transmit plotted down, per interface on the selected node(s). Loopback excluded.",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
@@ -725,7 +751,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 32
       },
       "fieldConfig": {
         "defaults": {
@@ -759,7 +785,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": ".*tx.*"
+              "options": "tx .*"
             },
             "properties": [
               {
@@ -810,19 +836,19 @@
       ]
     },
     {
-      "id": 11,
+      "id": 13,
       "type": "timeseries",
-      "title": "Network errors & drops per device (rate, 1m)",
-      "description": "rx/tx errors and drops per interface. Sustained non-zero values indicate link or driver problems.",
+      "title": "Interface errors (pps), rx + tx",
+      "description": "rate(node_network_receive_errs_total[1m]) and rate(node_network_transmit_errs_total[1m]) per interface. Sustained non-zero values indicate a faulty link or NIC.",
       "datasource": {
         "type": "prometheus",
         "uid": "netwatch-prometheus"
       },
       "gridPos": {
-        "h": 8,
-        "w": 24,
+        "h": 9,
+        "w": 12,
         "x": 0,
-        "y": 39
+        "y": 41
       },
       "fieldConfig": {
         "defaults": {
@@ -831,7 +857,8 @@
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "fillOpacity": 10,
-            "showPoints": "never",
+            "showPoints": "auto",
+            "pointSize": 4,
             "stacking": {
               "mode": "none",
               "group": "A"
@@ -880,7 +907,7 @@
             "uid": "netwatch-prometheus"
           },
           "expr": "rate(node_network_receive_errs_total{instance=~\"$instance\",device!~\"lo\"}[1m])",
-          "legendFormat": "rx errs {{instance}} {{device}}",
+          "legendFormat": "rx err {{instance}} {{device}}",
           "range": true,
           "refId": "A"
         },
@@ -890,19 +917,87 @@
             "uid": "netwatch-prometheus"
           },
           "expr": "rate(node_network_transmit_errs_total{instance=~\"$instance\",device!~\"lo\"}[1m])",
-          "legendFormat": "tx errs {{instance}} {{device}}",
+          "legendFormat": "tx err {{instance}} {{device}}",
           "range": true,
           "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Interface drops (pps), rx + tx",
+      "description": "rate(node_network_receive_drop_total[1m]) and rate(node_network_transmit_drop_total[1m]) per interface. Sustained drops indicate congestion or buffer exhaustion.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "netwatch-prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 41
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "auto",
+            "pointSize": 4,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "min": 0,
+          "unit": "pps"
         },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "max",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "netwatch-prometheus"
           },
           "expr": "rate(node_network_receive_drop_total{instance=~\"$instance\",device!~\"lo\"}[1m])",
-          "legendFormat": "rx drops {{instance}} {{device}}",
+          "legendFormat": "rx drop {{instance}} {{device}}",
           "range": true,
-          "refId": "C"
+          "refId": "A"
         },
         {
           "datasource": {
@@ -910,9 +1005,119 @@
             "uid": "netwatch-prometheus"
           },
           "expr": "rate(node_network_transmit_drop_total{instance=~\"$instance\",device!~\"lo\"}[1m])",
-          "legendFormat": "tx drops {{instance}} {{device}}",
+          "legendFormat": "tx drop {{instance}} {{device}}",
           "range": true,
-          "refId": "D"
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "Top talkers by tx throughput (5m)",
+      "description": "topk(10, rate(node_network_transmit_bytes_total[5m])*8). Highest egress interfaces on the selected node(s). Loopback excluded.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "netwatch-prometheus"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 50
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto",
+            "filterable": true
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tx throughput"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bps"
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "gradient-gauge"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "continuous-GrYlRd"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Tx throughput",
+            "desc": true
+          }
+        ],
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "netwatch-prometheus"
+          },
+          "expr": "topk(10, rate(node_network_transmit_bytes_total{instance=~\"$instance\",device!~\"lo\"}[5m]) * 8)",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true
+            },
+            "indexByName": {
+              "instance": 0,
+              "device": 1,
+              "Value": 2
+            },
+            "renameByName": {
+              "Value": "Tx throughput"
+            }
+          }
         }
       ]
     }
@@ -936,8 +1141,8 @@
         },
         "query": "label_values(up{job=\"node\"}, instance)",
         "refresh": 2,
-        "includeAll": false,
-        "multi": false,
+        "includeAll": true,
+        "multi": true,
         "sort": 1,
         "current": {}
       }
@@ -949,8 +1154,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "NetWatch — Node Detail",
-  "uid": "netwatch-node-detail",
+  "title": "NetWatch - Hosts & Interfaces",
+  "uid": "netwatch-hosts-interfaces",
   "version": 1,
   "weekStart": ""
 }

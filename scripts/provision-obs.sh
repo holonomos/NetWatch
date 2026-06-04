@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
-# ==========================================================================
-# provision-obs.sh — Configure the observability VM
-# ==========================================================================
-# Called by Vagrant provisioner. Everything is pre-installed in the golden
-# image — this script only writes config files and enables services.
-#
-# Expects synced folders at /tmp/netwatch-config/{prometheus,loki,grafana,dnsmasq}
-# ==========================================================================
+# provision-obs.sh: configure the observability VM (Vagrant provisioner).
+# Golden image has everything pre-installed; this only writes config and enables services.
+# Expects synced configs at /tmp/netwatch-config/{prometheus,loki,grafana,dnsmasq}.
 set -euo pipefail
 
 echo "=== Configuring obs VM ==="
@@ -16,7 +11,7 @@ cp /tmp/netwatch-config/prometheus/prometheus.yml /etc/prometheus/
 if [ -f /tmp/netwatch-config/prometheus/alerts.yml ]; then
     cp /tmp/netwatch-config/prometheus/alerts.yml /etc/prometheus/
 else
-    echo "WARNING: alerts.yml not found — Prometheus will start without alert rules"
+    echo "WARNING: alerts.yml not found; Prometheus will start without alert rules"
 fi
 cp /tmp/netwatch-config/loki/loki-config.yml /etc/loki/
 cp /tmp/netwatch-config/dnsmasq/dnsmasq.conf /etc/dnsmasq.conf

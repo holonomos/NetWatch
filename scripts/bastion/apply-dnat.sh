@@ -1,21 +1,6 @@
 #!/usr/bin/env bash
-# ==========================================================================
-# apply-dnat.sh — Apply DNAT port-forwarding rules on bastion
-# ==========================================================================
-# Reads config/bastion-dnat.conf and applies iptables DNAT rules.
-#
-# Config format (one rule per line):
-#   <external_port> <internal_ip> <internal_port> [protocol]
-#   # comments and blank lines are ignored
-#
-# Example:
-#   5432 10.0.5.1 5432 tcp    # PostgreSQL on srv-2-1
-#   6379 10.0.6.2 6379 tcp    # Redis on srv-3-2
-#   8080 10.0.4.1 80   tcp    # Web app on srv-1-1
-#
-# Run from host: bash scripts/bastion/apply-dnat.sh
-# Or from bastion: sudo bash /usr/local/bin/apply-dnat.sh
-# ==========================================================================
+# Apply iptables DNAT port-forwarding rules on the bastion from
+# config/bastion-dnat.conf. Format per line: <ext_port> <int_ip> <int_port> [proto].
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -31,11 +16,9 @@ echo "========================================"
 echo " NetWatch: Bastion DNAT Configuration"
 echo "========================================"
 
-# Build the iptables commands from config
 RULES=""
 RULE_COUNT=0
 while IFS= read -r line; do
-    # Skip comments and blank lines
     [[ "$line" =~ ^[[:space:]]*# ]] && continue
     [[ -z "${line// /}" ]] && continue
 
@@ -58,7 +41,6 @@ fi
 
 echo "  Applying $RULE_COUNT DNAT rules to bastion..."
 
-# Apply rules on bastion
 vagrant ssh bastion -c "sudo bash -c '
 $RULES
 iptables-save > /etc/sysconfig/iptables

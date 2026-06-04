@@ -1,14 +1,5 @@
 #!/usr/bin/env bash
-# NetWatch — Chaos: Link Down / Restore
-# Brings a fabric link down by disabling its bridge, or restores it.
-#
-# Usage:
-#   bash scripts/chaos/link-down.sh <node-a> <node-b>             # bring link down
-#   bash scripts/chaos/link-down.sh <node-a> <node-b> --restore   # bring link back up
-#
-# Examples:
-#   bash scripts/chaos/link-down.sh spine-1 leaf-1a
-#   bash scripts/chaos/link-down.sh spine-1 leaf-1a --restore
+# Chaos: bring a fabric link down by disabling its bridge, or --restore it. See --help.
 
 set -euo pipefail
 

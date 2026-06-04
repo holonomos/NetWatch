@@ -1,25 +1,9 @@
 #!/usr/bin/env bash
-# ==========================================================================
-# bake-golden-image.sh — Build the NetWatch golden Vagrant box
-# ==========================================================================
-# Takes the base artifacts/boxes/fedora-${FEDORA_RELEASE}.box, boots a temp VM with internet access,
-# installs everything needed by ANY VM role (server, bastion, mgmt),
-# cleans up, and exports a fully-loaded golden box.
-#
-# The result: VMs boot ready to go. Provisioning only configures, never installs.
-#
-# Package philosophy:
-#   - The golden image carries: FRR, observability agents, debugging tools, sysctls.
-#   - obs extras: prometheus, grafana, loki, dnsmasq (all pre-installed, enabled at config time).
-#   - bastion extras: iptables-services (NAT gateway).
-#   - Nothing is installed at boot. Ever.
-#
-# Usage:
-#   bash scripts/bake-golden-image.sh
-#
-# Output:
-#   artifacts/boxes/netwatch-golden.box
-# ==========================================================================
+# Build the golden Vagrant box: boot a temp VM, install everything any role
+# needs (FRR, observability agents, debug tools, sysctls), clean, and package.
+# VMs then boot ready; provisioning only configures, never installs.
+# Usage: bash scripts/bake-golden-image.sh
+# Output: artifacts/boxes/netwatch-golden.box
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -29,12 +13,12 @@ OUTPUT_BOX="$PROJECT_ROOT/artifacts/boxes/netwatch-golden.box"
 FORWARD_FIX_APPLIED=0
 VIRT_BRIDGE=""
 
-# --- Cleanup trap (runs on any exit — success or failure) ------------------
+# --- Cleanup trap (runs on any exit, success or failure) -------------------
 cleanup() {
   local exit_code=$?
   echo ""
   if [ "$exit_code" -ne 0 ]; then
-    echo "=== Bake FAILED (exit $exit_code) — cleaning up ==="
+    echo "=== Bake FAILED (exit $exit_code); cleaning up ==="
   fi
   # Destroy bake VM if it exists
   if [ -d "$BAKE_DIR" ]; then
@@ -110,7 +94,7 @@ Vagrant.configure("2") do |config|
     lv.memory = 2048
     lv.cpus = 2
     lv.driver = "kvm"
-    # Keep the default NAT interface — we need internet to install packages
+    # Keep the default NAT interface for package-install internet access
   end
 end
 VAGRANTFILE
@@ -312,7 +296,7 @@ echo "--- All binaries installed ---"
 PROVISION_BINS
 
 # ==========================================================================
-# Phase 3: Systemd units (all disabled — enabled at provision time)
+# Phase 3: Systemd units (all disabled, enabled at provision time)
 # ==========================================================================
 echo ""
 echo "=== Phase 3: Systemd units + sysctls ==="
@@ -461,9 +445,7 @@ echo "=== Phase 5: Packaging golden box ==="
 vagrant halt
 vagrant package --output "$OUTPUT_BOX"
 
-# --- Teardown (handled by cleanup trap on EXIT) ----------------------------
-# The cleanup function destroys the bake VM, removes .bake-tmp, and cleans
-# nft rules. It runs automatically on both success and failure.
+# Teardown (bake VM, .bake-tmp, nft rules) handled by the cleanup trap on EXIT.
 
 # --- Summary -----------------------------------------------------------------
 echo ""

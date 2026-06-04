@@ -1,17 +1,6 @@
 #!/usr/bin/env bash
-# NetWatch — Chaos: Packet Loss Injection
-# Introduces artificial packet loss on a fabric link using tc netem.
-#
-# Usage:
-#   bash scripts/chaos/packet-loss.sh <node-a> <node-b> --loss 10%
-#   bash scripts/chaos/packet-loss.sh <node-a> <node-b> --restore
-#
-# Applies netem to ALL host-side veths on the bridge (both directions).
-#
-# Examples:
-#   bash scripts/chaos/packet-loss.sh spine-1 leaf-1a --loss 10%
-#   bash scripts/chaos/packet-loss.sh spine-1 leaf-1a --loss 50%
-#   bash scripts/chaos/packet-loss.sh spine-1 leaf-1a --restore
+# Chaos: inject packet loss on a fabric link via tc netem.
+# Applies netem to every host-side veth on the bridge (both directions).
 
 set -euo pipefail
 

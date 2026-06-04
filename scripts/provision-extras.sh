@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# provision-extras.sh — Install heavy packages on all VMs via SSH
-# Run from the host after vagrant up completes:
+# provision-extras.sh: install debugging/stress tooling on all VMs via SSH.
+# Not needed for fabric bring-up; useful for chaos testing. Run after vagrant up:
 #   bash scripts/provision-extras.sh
-#
-# Installs dev tools, debugging tools, stress-ng, etc. that are NOT needed
-# for basic P3 bring-up but useful for later phases (chaos, debugging).
 set -euo pipefail
 
 EXTRAS_COMMON="curl wget git vim tmux jq net-tools iproute bind-utils mtr tcpdump traceroute htop iotop iftop strace lsof nmap-ncat iputils stress stress-ng"
@@ -42,7 +39,7 @@ echo ""
 echo "=== Installing extras on bastion ==="
 vagrant ssh bastion -c "sudo dnf install -y $EXTRAS_COMMON $EXTRAS_DEV ansible python3-pip 2>/dev/null && sudo pip3 install paramiko jinja2 2>/dev/null" || true
 
-# mgmt is a reserved stub with no services — intentionally skipped.
+# mgmt is a reserved stub with no services; intentionally skipped.
 
 echo ""
 echo "Done. All extras installed."

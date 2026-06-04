@@ -1,17 +1,10 @@
 #!/bin/bash
-# NetWatch — FRR VM Fabric Wiring
-# Generated from topology.yml — DO NOT HAND-EDIT
-#
-# Hot-plugs fabric NICs into FRR VMs (via virsh), then configures IPs,
-# loopback, sysctls, and restarts FRR + frr_exporter.
-#
-# Prerequisites: FRR VMs running (vagrant up), fabric bridges exist (setup-bridges.sh).
-# Run as your user (NOT sudo): bash scripts/fabric/setup-frr-links.sh
-# (uses sudo internally for virsh commands only)
+# NetWatch: FRR VM Fabric Wiring
+# Generated from topology.yml: DO NOT HAND-EDIT
+# Hot-plugs fabric NICs into FRR VMs (virsh), then sets IPs, loopback, sysctls,
+# and restarts FRR + frr_exporter. Needs VMs up and bridges from setup-bridges.sh.
+# Run as non-root; uses sudo internally for virsh only.
 
-# -e: a failed virsh attach-interface / vagrant ssh aborts instead of printing
-#     a false success line. Commands that may legitimately fail are guarded
-#     with `|| true` or used as `if`/`&&` tests.
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -19,8 +12,7 @@ VIRSH_PREFIX="$(basename "$PROJECT_ROOT")"
 
 echo "NetWatch: Wiring FRR VMs to fabric bridges..."
 
-# Helper: bounded wait for a freshly attached NIC's MAC to appear in the
-# domain's interface list; returns 0 when found.
+# Bounded wait for an attached NIC's MAC to surface in domiflist.
 wait_for_mac() {
     local domain="$1"
     local mac="$2"
@@ -37,7 +29,7 @@ wait_for_mac() {
     return 0
 }
 
-# Helper: attach a NIC to a VM on a given bridge (idempotent)
+# Attach a NIC to a VM on a bridge (idempotent).
 attach_nic() {
     local vm="$1"
     local bridge="$2"
@@ -72,8 +64,7 @@ attach_nic() {
     fi
 }
 
-# Helper: configure fabric interfaces inside an FRR VM
-# Uses configure-frr-fabric.sh passed via stdin
+# Configure fabric interfaces inside an FRR VM via configure-frr-fabric.sh (stdin).
 FABRIC_SCRIPT="$PROJECT_ROOT/scripts/fabric/configure-frr-fabric.sh"
 
 configure_frr() {
@@ -305,14 +296,10 @@ configure_frr "spine-2" \
     "02:4E:57:02:09:02" "eth-leaf-4a" "172.16.2.57" "30" \
     "02:4E:57:02:0A:02" "eth-leaf-4b" "172.16.2.61" "30"
 
-# ========================================================================
-# EVPN overlay access NICs on member leaves (attached during `fabric`)
-# ========================================================================
-# eth-ovl / eth-ovl-b are pure L2 access ports — no IP is configured here.
-# They are deliberately excluded from the configure_frr quad list above so
-# configure-frr-fabric.sh never puts an address on them. The `evpn`/`overlay`
-# step enslaves them into the matching L2VNI bridge. Attaching them now (during
-# `fabric`) ensures both EVPN passes find them present.
+# EVPN overlay access NICs on member leaves (eth-ovl/eth-ovl-b): pure L2 access
+# ports, no IP (kept out of the configure_frr quad list). Attached here during
+# `fabric` so both EVPN passes find them; `evpn`/`overlay` enslaves them into
+# the L2VNI bridge.
 echo ""
 echo "Attaching 5 EVPN overlay access NIC(s) to member leaves..."
 echo "  leaf-1a: eth-ovl on br-ovl-01 (02:4E:57:03:F0:01) [L2 access, no IP]"

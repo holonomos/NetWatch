@@ -1,12 +1,9 @@
 #!/bin/bash
-# NetWatch — Teardown
-# Generated from topology.yml — DO NOT HAND-EDIT
+# NetWatch: Teardown
+# Generated from topology.yml: DO NOT HAND-EDIT
 #
-# Shuts down all FRR VMs, detaches the persisted (--config) fabric/overlay NICs
-# from every domain, and removes the fabric + overlay bridges.
-# Does NOT destroy VMs (use `vagrant destroy` for that).
-#
-# Run as your user (uses sudo internally for bridge commands only).
+# Shut down FRR VMs, detach persisted (--config) fabric/overlay NICs, and remove
+# fabric + overlay bridges. Does NOT destroy VMs (use `vagrant destroy`).
 
 set -uo pipefail
 
@@ -14,11 +11,9 @@ VIRSH_PREFIX="$(basename "$(cd "$(dirname "$0")/../.." && pwd)")"
 
 echo "NetWatch: Tearing down fabric..."
 
-# Helper: detach a persisted (--config) NIC by MAC from a domain. Fabric NICs
-# were hot-plugged with --config (persisted in the domain XML); without this,
-# after teardown + `vagrant up` the VM references bridges that no longer exist.
-# Detaches --live too when the domain is still running.
-# Tolerant: a domain/NIC that is already gone is not an error.
+# Detach a persisted (--config) NIC by MAC. NICs were hot-plugged with --config
+# (in the domain XML); without removing it, the next `vagrant up` references
+# deleted bridges. Detaches --live too if running; missing domain/NIC is no-op.
 detach_nic() {
     local vm="$1"
     local mac="$2"
@@ -110,8 +105,7 @@ if [ "$STATE" != "shut off" ]; then
 fi
 
 # --- Detach persisted (--config) fabric/overlay NICs from every domain ---
-# Otherwise the next `vagrant up` boots VMs whose XML references now-deleted
-# bridges. Servers/bastion are left running; only their extra NICs are removed.
+# Servers/bastion stay running; only their extra fabric/overlay NICs are removed.
 echo ""
 echo "  Detaching persisted fabric/overlay NICs..."
 detach_nic "border-1" "02:4E:57:01:01:01"
@@ -358,7 +352,7 @@ sudo ip link set br-ovl-0D-b down 2>/dev/null || true
 sudo ip link del br-ovl-0D-b 2>/dev/null && echo "    br-ovl-0D-b: removed" || true
 
 # --- Management bridge ---
-# Managed by libvirt — do NOT delete it here.
+# Managed by libvirt; do NOT delete it here.
 
 echo ""
 echo "NetWatch: Fabric teardown complete."
