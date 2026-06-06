@@ -3,7 +3,6 @@
 
 > A data-center network fabric on one Linux box: an [RFC 7938](https://www.rfc-editor.org/rfc/rfc7938) eBGP-Clos underlay with an EVPN/VXLAN overlay, across 31 KVM VMs. No containers, all generated from a single `topology.yml`.
 
-![NetWatch NOC overview](noc.png)
 <img width="2877" height="879" alt="noc" src="https://github.com/user-attachments/assets/164341d9-42d0-48e4-bf9b-120189a96aa2" />
 
 ## What it is
@@ -65,18 +64,15 @@ Verified on a clean bring-up:
 
 **Fabric & Routing** - per-peer BGP/BFD state, prefix counts, message rate, session flaps.
 
-![Fabric and routing dashboard](controlPlane.png)
 <img width="2877" height="1503" alt="controlPlane" src="https://github.com/user-attachments/assets/04b37660-879d-44bd-a8fa-5a8ba1bca657" />
 
 **EVPN / VXLAN** - VNI inventory, per-VNI local vs remote MACs and ARP, remote VTEPs.
 
-![EVPN/VXLAN dashboard](vnis.png)
 <img width="2877" height="1393" alt="vnis" src="https://github.com/user-attachments/assets/2d702dde-183d-4b36-bfcb-6c80e38347b9" />
 
 
 **Hosts & Interfaces** - per-node CPU/memory/disk and per-interface throughput, errors and drops.
 
-![Hosts and interfaces dashboard](interfaces.png)
 <img width="2877" height="1185" alt="interfaces" src="https://github.com/user-attachments/assets/9ae514dc-2798-4639-a496-15f9b1adc91c" />
 
 
